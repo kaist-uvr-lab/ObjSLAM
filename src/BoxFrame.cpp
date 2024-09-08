@@ -4,13 +4,15 @@
 #include <KeyFrame.h>
 #include <Frame.h>
 #include <MapPoint.h>
+
+#include <SemanticLabel.h>
 #include <Utils_Geometry.h>
 
 namespace ObjectSLAM {
-	BoxFrame::BoxFrame(int _id) :BaseSLAM::AbstractFrame(_id)
+	BoxFrame::BoxFrame(int _id) :BaseSLAM::AbstractFrame(_id), mbInitialized(false), mpPrevBF(nullptr)
 	{}
-	BoxFrame::BoxFrame(int _id, const int w, const int h, BaseSLAM::BaseDevice* Device, BaseSLAM::AbstractPose* _Pose) : BaseSLAM::AbstractFrame(Device, _Pose, _id), BaseSLAM::KeyPointContainer(mpCamera), BaseSLAM::StereoDataContainer(), //mUsed(cv::Mat::zeros(h, w, CV_8UC1)),
-		mpKC(this), mpSC(this), mpRefKF(nullptr), mpDevice(Device)
+	BoxFrame::BoxFrame(int _id, const int w, const int h, BaseSLAM::BaseDevice* Device, BaseSLAM::AbstractPose* _Pose) : BaseSLAM::AbstractFrame(Device, _Pose, _id), BaseSLAM::KeyPointContainer(mpCamera), BaseSLAM::StereoDataContainer(), mUsed(cv::Mat::zeros(h, w, CV_32SC1)),
+		mpKC(this), mpSC(this), mpRefKF(nullptr), mpDevice(Device), mbInitialized(false), mpPrevBF(nullptr)
 	{}
 	BoxFrame::~BoxFrame() {
 		std::vector<BoundingBox*>().swap(mvpBBs);
@@ -18,9 +20,97 @@ namespace ObjectSLAM {
 		labeled.release();
 		depth.release();
 	}
+	void BoxFrame:: UpdateInstanceKeyPoints(const std::vector<std::pair<cv::Point2f, cv::Point2f>>& vecPairPoints, const std::vector<std::pair<int, int>>& vecMatches, std::map < std::pair<int, int>, std::pair<int, int>>& mapChangedIns) {
+		std::map<int, std::vector<cv::Point2f>> mapPoints;
 
-	void BoxFrame::UpdateInstanceKeyPoints(const std::vector<std::pair<int, int>>& vecMatches, const std::vector<int>& vecIDXs, const std::vector<std::pair<int, int>>& vPairFrameAndBox, std::map<std::pair<int,int>, std::pair<int, int>>& mapChangedIns) {
+		float w = mUsed.cols - 1;
+		float h = mUsed.rows - 1;
+
+		for (int i = 0; i < vecMatches.size(); i++) {
+			auto pid = vecMatches[i].first;
+			auto cid = vecMatches[i].second;
+
+			auto pair = std::make_pair(pid, cid);
+
+			if (!mapChangedIns.count(pair))
+				continue;
+			auto newPair = mapChangedIns[pair];
+
+			//std::cout << "a" << std::endl;
+			if (!mmpBBs.count(cid))
+				std::cout << "err = old curr ins " << std::endl;
+			if (!mmpBBs.count(newPair.second))
+				std::cout << "err = new curr ins =" << mnId << " " << newPair.second << std::endl;
+			auto pOldIns = mmpBBs[cid];
+			auto pNewIns = mmpBBs[newPair.second];
+			//std::cout << "b" << std::endl;
+			
+			auto pt = vecPairPoints[i].second;
+			mapPoints[newPair.second].push_back(pt);
+		}
+
+		//mask filling
+		for (auto pair : mapPoints) {
+			auto sid = pair.first;
+			auto vecPoints = pair.second;
+
+			float min_x = 1000.0;
+			float max_x = 0.0;
+			float min_y = 1000.0;
+			float max_y = 0.0;
+
+			for (auto pt : vecPoints) {
+				if (pt.x > max_x) {
+					max_x = pt.x;
+				}
+				if (pt.x < min_x) {
+					min_x = pt.x;
+				}
+				if (pt.y > max_y) {
+					max_y = pt.y;
+				}
+				if (pt.y < min_y) {
+					min_y = pt.y;
+				}
+			}
+			min_x -= 2;
+			min_y -= 2;
+			max_x += 2;
+			max_y += 2;
+			if (min_x < 0.0)
+				min_x = 0.0;
+			if (max_x > w)
+				max_x = w;
+			if (min_y < 0.0)
+				min_y = 0.0;
+			if (max_y > h)
+				max_y = h;
+			auto rect = cv::Rect(min_x, min_y, max_x - min_x, max_y - min_y);
+			{
+				std::unique_lock<std::mutex> lock(mMutexInstance);
+				cv::rectangle(seg, rect, cv::Scalar(sid, 0, 0), -1);
+			}
+			
+			//seg(rect) = sid;
+			//std::cout << "new ins rect = " << rect << std::endl;
+		}
+		//키포인트 체크
 		
+		for (int i = 0; i < N; i++) {
+			auto pt = mvKeyDatas[i].pt;
+			int sid = GetInstance(pt);
+			if (mapPoints.count(sid)) {
+				mvnInsIDs[i] = sid;
+			}
+		}
+	}
+	void BoxFrame::UpdateInstanceKeyPoints(const std::vector<std::pair<int, int>>& vecMatches, const std::vector<int>& vecIDXs, std::map<std::pair<int,int>, std::pair<int, int>>& mapChangedIns) {
+		
+		std::map<int, std::vector<cv::Point2f>> mapPoints;
+
+		float w = mUsed.cols-1;
+		float h = mUsed.rows-1;
+
 		for (int i = 0; i < vecMatches.size(); i++) {
 			auto pid = vecMatches[i].first;
 			auto cid = vecMatches[i].second;
@@ -41,24 +131,102 @@ namespace ObjectSLAM {
 			//std::cout << "b" << std::endl;
 			int idx = vecIDXs[i];
 			
-			mvLabels[idx] = newPair.first;
-
-			auto pair2 = vPairFrameAndBox[idx];
-			if (pid != pair2.first)
-			{
-				std::cout << "UpdateInstanceKeyPoints????????????????????????????" << std::endl;
-			}
-			auto kpidx = pair2.second;
-			if (kpidx > pOldIns->mvKeyDatas.size())
-				std::cout << "error index" << std::endl;
+			mvnInsIDs[idx] = newPair.first;
 			
-			pOldIns->mvbInlierKPs.update(kpidx, false);
-			const auto kp = pOldIns->mvKeyDatas[kpidx];
-			const auto kpUn = pOldIns->mvKeyDataUns[kpidx];
-			const cv::Mat d = pOldIns->mDescriptors.row(kpidx).clone();
-			//std::cout << "c" << std::endl;
-			pNewIns->AddData(kp, kpUn, d);
-			//std::cout << "d" << std::endl;
+			//int label = pNewIns->mnLabel;
+			//mvpConfLabels[idx]->Update(pNewIns->mnLabel, pNewIns->mfConfidence, pNewIns->mbIsthing);
+
+			//EdgeSLAM::SemanticConfidence* conf;
+			//if (!mvpConfLabels[idx]->LabelConfCount.Count(pNewIns->mnLabel)) {
+			//	conf = new EdgeSLAM::SemanticConfidence(pNewIns->mbIsthing);
+			//}
+			//else {
+			//	conf = mvpConfLabels[idx]->LabelConfCount.Get(pNewIns->mnLabel);
+			//}
+			//float fconf = pNewIns->mfConfidence;
+			//
+			//conf->Add(fconf);
+			//float val = conf->conf;
+
+			//mvpConfLabels[idx]->LabelConfCount.Update(pNewIns->mnLabel, conf);
+
+			//if (val > mvpConfLabels[idx]->maxConf) {
+			//	mvpConfLabels[idx]->label = label;
+			//	mvpConfLabels[idx]->maxConf = val;
+			//}
+			//else {
+			//	//slabel 
+			//}
+
+			mapPoints[newPair.first].push_back(mvKeyDatas[idx].pt);
+
+			/*else {
+				label = pMPi->mpConfLabel->label;
+			}*/
+
+			//smvpConfLabels[idx]->LabelConfCount.U
+
+			//auto pair2 = vPairFrameAndBox[idx];
+			//if (pid != pair2.first)
+			//{
+			//	std::cout << "UpdateInstanceKeyPoints????????????????????????????" << std::endl;
+			//}
+			//auto kpidx = pair2.second;
+			//if (kpidx > pOldIns->mvKeyDatas.size())
+			//	std::cout << "error index" << std::endl;
+			//
+			//pOldIns->mvbInlierKPs.update(kpidx, false);
+			//const auto kp = pOldIns->mvKeyDatas[kpidx];
+			//const auto kpUn = pOldIns->mvKeyDataUns[kpidx];
+			//const cv::Mat d = pOldIns->mDescriptors.row(kpidx).clone();
+			////std::cout << "c" << std::endl;
+			//pNewIns->AddData(kp, kpUn, d);
+			////std::cout << "d" << std::endl;
+		}
+
+		//mask filling
+		for (auto pair : mapPoints) {
+			auto sid = pair.first;
+			auto vecPoints = pair.second;
+
+			float min_x = 1000.0;
+			float max_x = 0.0;
+			float min_y = 1000.0;
+			float max_y = 0.0;
+
+			for (auto pt : vecPoints) {
+				if (pt.x > max_x) {
+					max_x = pt.x;
+				}
+				if (pt.x < min_x) {
+					min_x = pt.x;
+				}
+				if (pt.y > max_y) {
+					max_y = pt.y;
+				}
+				if (pt.y < min_y) {
+					min_y = pt.y;
+				}
+			}
+			min_x -= 2;
+			min_y -= 2;
+			max_x += 2;
+			max_y += 2;
+			if (min_x < 0.0)
+				min_x = 0.0;
+			if (max_x > w)
+				max_x = w;
+			if (min_y < 0.0)
+				min_y = 0.0;
+			if (max_y > h)
+				max_y = h;
+			auto rect = cv::Rect(min_x, min_y, max_x - min_x, max_y - min_y);
+			{
+				std::unique_lock<std::mutex> lock(mMutexInstance);
+				cv::rectangle(seg, rect, cv::Scalar(sid, 0, 0), -1);
+			}
+			//seg(rect) = sid;
+			//std::cout << "new ins rect = " << rect << std::endl;
 		}
 	}
 
@@ -71,17 +239,40 @@ namespace ObjectSLAM {
 			auto oldpair = pair.first;
 			auto newpair = pair.second;
 
+			SegInstance* prevIns = nullptr;
+			SegInstance* currIns = nullptr;
 			if (oldpair.first != newpair.first) {
-
+				//currIns 획득
+				//prev 생성
+				currIns = pTarget->mmpBBs[oldpair.second];
+				prevIns = new ObjectSLAM::SegInstance(this, pPrevKF->fx, pPrevKF->fy, pPrevKF->cx, pPrevKF->cy, currIns->mpConfLabel->label, currIns->mpConfLabel->maxConf, currIns->mbIsthing, this->mpDevice, false);
+				prevIns->SetPose(GetPose());
+				prevIns->mStrLabel = currIns->mStrLabel;
+				mmpBBs[newpair.first] = prevIns;
 			}
 			if (oldpair.second != newpair.second) {
-				std::cout << "Ins::Update::error::cid" << std::endl;
+				/*if(oldpair.first != newpair.first){
+					std::cout << "Ins::Update::error::cid" << std::endl;
+				}
+				continue;*/
+
+				//prev 획득
+				//curr 생성
+				prevIns = mmpBBs[oldpair.first];
+				currIns = new ObjectSLAM::SegInstance(pTarget, pCurrKF->fx, pCurrKF->fy, pCurrKF->cx, pCurrKF->cy, prevIns->mpConfLabel->label, prevIns->mpConfLabel->maxConf, prevIns->mbIsthing, pTarget->mpDevice, false);
+				currIns->SetPose(pTarget->GetPose());
+				currIns->mStrLabel = prevIns->mStrLabel;
+				pTarget->mmpBBs[newpair.second] = currIns;
 			}
 			//std::cout << "add new ins = " <<mnId<<" " << newpair.first << std::endl;
-			auto currIns = pTarget->mmpBBs[oldpair.second];
-			auto prevIns = new ObjectSLAM::SegInstance(this, pPrevKF->fx, pPrevKF->fy, pPrevKF->cx, pPrevKF->cy, currIns->mnLabel, currIns->mfConfidence, currIns->mbIsthing, this->mpDevice);
+			/*auto currIns = pTarget->mmpBBs[oldpair.second];
+			auto prevIns = new ObjectSLAM::SegInstance(this, pPrevKF->fx, pPrevKF->fy, pPrevKF->cx, pPrevKF->cy, currIns->mpConfLabel->label, currIns->mpConfLabel->maxConf, currIns->mbIsthing, this->mpDevice);
 			prevIns->SetPose(GetPose());
-			mmpBBs[newpair.first] = prevIns;
+			prevIns->mStrLabel = currIns->mStrLabel;
+			mmpBBs[newpair.first] = prevIns;*/
+
+			prevIns->UpdateInstance(currIns);
+			currIns->UpdateInstance(prevIns);
 		}
 	}
 
@@ -114,19 +305,19 @@ namespace ObjectSLAM {
 			if (!currIns)
 				std::cout << "null curr ins" << std::endl;
 
-			if (!mmpBBs.count(pid))
-			{
-				//std::cout << "add new ins = " << pid << std::endl;
-				prevIns = new ObjectSLAM::SegInstance(this, pPrevKF->fx, pPrevKF->fy, pPrevKF->cx, pPrevKF->cy, currIns->mnLabel, currIns->mfConfidence, currIns->mbIsthing, this->mpDevice);
-				prevIns->SetPose(GetPose());
-				mmpBBs[pid] = prevIns;
-			}
-			if (!pTarget->mmpBBs.count(cid))
-			{
-				currIns = new ObjectSLAM::SegInstance(pTarget, pCurrKF->fx, pCurrKF->fy, pCurrKF->cx, pCurrKF->cy, prevIns->mnLabel, prevIns->mfConfidence, prevIns->mbIsthing, pTarget->mpDevice);
-				currIns->SetPose(pTarget->GetPose());
-				pTarget->mmpBBs[cid] = currIns;
-			}
+			//if (!mmpBBs.count(pid))
+			//{
+			//	//std::cout << "add new ins = " << pid << std::endl;
+			//	prevIns = new ObjectSLAM::SegInstance(this, pPrevKF->fx, pPrevKF->fy, pPrevKF->cx, pPrevKF->cy, currIns->mnLabel, currIns->mfConfidence, currIns->mbIsthing, this->mpDevice);
+			//	prevIns->SetPose(GetPose());
+			//	mmpBBs[pid] = prevIns;
+			//}
+			//if (!pTarget->mmpBBs.count(cid))
+			//{
+			//	currIns = new ObjectSLAM::SegInstance(pTarget, pCurrKF->fx, pCurrKF->fy, pCurrKF->cx, pCurrKF->cy, prevIns->mnLabel, prevIns->mfConfidence, prevIns->mbIsthing, pTarget->mpDevice);
+			//	currIns->SetPose(pTarget->GetPose());
+			//	pTarget->mmpBBs[cid] = currIns;
+			//}
 
 			if (!prevIns)
 				std::cout << "null prev ins" << std::endl;
@@ -144,14 +335,150 @@ namespace ObjectSLAM {
 
 	}
 
-	void BoxFrame::MatchingWithFrame(BoxFrame* pTarget, std::vector<int>& vecIDXs, std::vector<std::pair<int, int>>& vecPairMatches, std::vector<std::pair<int, int>>& vecPairPointIdxInBox) {
+	void BoxFrame::MatchingFrameWithDenseOF(BoxFrame* pTarget, std::vector<cv::Point2f>& vecPoints1, std::vector<cv::Point2f>& vecPoints2, int scale) {
+
+		std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+
+		cv::Mat gray1, gray2;
+		if (scale > 1) 
+		{
+			cv::resize(gray, gray1, gray.size() / scale);
+			cv::resize(pTarget->gray, gray2, gray.size() / scale);
+		}
+		cv::Mat flow;
+		cv::calcOpticalFlowFarneback(gray1,gray2, flow, 0.5, 3, 15, 3, 7, 1.5, cv::OPTFLOW_FARNEBACK_GAUSSIAN);
+
+		for (int x = 0; x < flow.cols; x++) {
+			for (int y = 0; y < flow.rows; y++) {
+				int nx = x * scale;
+				int ny = y * scale;
+
+				if (nx >= gray.cols || ny >= gray.rows)
+					continue;
+				
+				float fx = flow.at<cv::Vec2f>(y, x).val[0] * scale;
+				float fy = flow.at<cv::Vec2f>(y, x).val[1] * scale;
+
+				if (abs(fx) < 0.001 && abs(fy) < 0.001)
+					continue;
+
+				cv::Point2f pt1(nx, ny);
+				cv::Point2f pt2(nx + fx, ny + fy);
+				//cv::line(img1, pt1, pt2, cv::Scalar(255, 0, 0), 2);
+
+				if (pt2.x < 0 || pt2.y < 0 || pt2.x >= pTarget->gray.cols || pt2.y >= pTarget->gray.rows)
+					continue;
+
+				vecPoints1.push_back(pt1);
+				vecPoints2.push_back(pt2);
+				
+				/*int label = labeled1.at<uchar>(ny, nx) + 1;
+				if (label <= 0)
+				{
+					continue;
+				}
+				cv::circle(img2, pt2, 5, SemanticColors[label], -1);*/
+			}
+		}
+
+		std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+		auto du_test1 = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "dense test = " << du_test1 << std::endl;
+	}
+	
+	void BoxFrame::MatchingWithFrame(EdgeSLAM::Frame* pTarget, const cv::Mat& fgray, std::vector<int>& vecInsIDs, std::map<int, int>& mapInsNLabel, std::vector<cv::Point2f>& vecCorners) {
 		
-		//std::vector<cv::Point2f> vecPrevCorners, vecCurrCorners;
+		//std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+		
+		std::vector<cv::Point2f> vecFrameCorners, vexBoxFrameCorners;
+		std::vector<int> idxs;
+		for (int i = 0; i < pTarget->N; i++) {
+		 	vecFrameCorners.push_back(pTarget->mvKeys[i].pt);
+		}
+		vecInsIDs = std::vector<int>(pTarget->N, -1);
+		std::vector<uchar> features_found;
+
+		if (vecFrameCorners.size() < 10)
+			return;
+
+		int win_size = 10;
+		cv::Mat pgray = fgray.clone();
+		cv::Mat cgray = gray.clone();
+		cv::calcOpticalFlowPyrLK(
+			pgray,                         // Previous image
+			cgray,                         // Next image
+			vecFrameCorners,                     // Previous set of corners (from imgA)
+			vecCorners,                     // Next set of corners (from imgB)
+			features_found,               // Output vector, each is 1 for tracked
+			cv::noArray(),                // Output vector, lists errors (optional)
+			cv::Size(win_size * 2 + 1, win_size * 2 + 1),  // Search window size
+			5,                            // Maximum pyramid level to construct
+			cv::TermCriteria(
+				cv::TermCriteria::MAX_ITER | cv::TermCriteria::EPS,
+				20,                         // Maximum number of iterations
+				0.3                         // Minimum change per iteration
+			)
+		);
+
+		//에피폴라 제약을 이용한 매칭 에러 체크
+		cv::Mat T1 = pTarget->GetPose();
+		cv::Mat R1 = T1.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t1 = T1.rowRange(0, 3).col(3);
+		const cv::Mat T2 = this->GetPose();
+		cv::Mat R2 = T2.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t2 = T2.rowRange(0, 3).col(3);
+		const cv::Mat K1 = pTarget->K.clone();
+		const cv::Mat K2 = this->K.clone();
+		cv::Mat F12 = CommonUtils::Geometry::ComputeF12(R1, t1, R2, t2, K1, K2);
+
+		int nfound = pTarget->N;
+
+		int ntest = 0;
+		//매칭 결과, 매칭 위치, 인스턴스 아이디를 tuple로 저장하기
+		
+		for (int i = 0; i < nfound; ++i) {
+			if (!features_found[i]) {
+				continue;
+			}
+			auto framePt = vecFrameCorners[i];
+			auto boxframePt = vecCorners[i];
+
+			auto kp = pTarget->mvKeys[i];
+
+			if (boxframePt.x < 20 || boxframePt.x >= cgray.cols - 20 || boxframePt.y < 20 || boxframePt.y >= cgray.rows - 20)
+				continue;
+
+			//epipolar 제약
+			if (!CommonUtils::Geometry::CheckDistEpipolarLine(framePt, boxframePt, F12, pTarget->mvLevelSigma2[kp.octave]))
+				continue;
+
+			auto cid = this->GetInstance(boxframePt);
+
+			if (!this->mmpBBs.count(cid))
+			{
+				std::cout << "box error = " << cid << std::endl;
+			}
+			int label = this->mmpBBs[cid]->mpConfLabel->label;
+
+			vecInsIDs[i] = cid;
+			mapInsNLabel[cid] = label;
+		}
+
+		/*std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+		auto du_test1 = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+		std::cout << "frame matching test = " << du_test1 << std::endl;*/
+	}
+	void BoxFrame::MatchingWithFrame(BoxFrame* pTarget, std::vector<int>& vecIDXs, std::vector<std::pair<int, int>>& vecPairMatches, std::vector<std::pair<cv::Point2f, cv::Point2f>>& vecPairVisualizedMatches) {
+		
+		std::vector<cv::Point2f> vecPrevCorners, vecCurrCorners;
 		//ConvertInstanceToFrame(vecPairPointIdxInBox, vecPrevCorners);
 
+		std::vector<int> idxs;
 		for (int i = 0; i < N; i++) {
-			if (mvLabels[i] >= 0)
+			if (mvnInsIDs[i] >= 0){
 				vecPrevCorners.push_back(mvKeyDatas[i].pt);
+				idxs.push_back(i);
+			}
 		}
 
 		std::vector<uchar> features_found;
@@ -190,49 +517,40 @@ namespace ObjectSLAM {
 
 		int nfound = vecPrevCorners.size();
 		
+		int ntest = 0;
 		//매칭 결과, 매칭 위치, 인스턴스 아이디를 tuple로 저장하기
+		std::unique_lock<std::mutex> lock(mMutexInstance);
 		for (int i = 0; i < nfound; ++i) {
 			if (!features_found[i]) {
 				continue;
-			}
+			} 
 			auto pt = vecCurrCorners[i];
+
 			//디스크립터 계산 가능한 영역 안의 키포인트 검출
 			if (pt.x < 20 || pt.x >= cgray.cols - 20 || pt.y < 20 || pt.y >= cgray.rows - 20)
 				continue;
-
+			if (pTarget->mUsed.at<int>(cv::Point(pt)) > 0) {
+				ntest++;
+			}
 			auto prevPt = vecPrevCorners[i];
 
-			auto prevPair = vecPairPointIdxInBox[i];
-			int prevId = prevPair.first;
-			int prevIdx = prevPair.second;
-
-			//int tempID = seg.at<uchar>(prevPt);
-
-			auto kp = mmpBBs[prevId]->mvKeyDatas[prevIdx];
-			//auto op = mmpBBs[prevId]->mvpMapDatas.get(prevIdx);
-
+			int idx = idxs[i];
+			auto kp = mvKeyDatas[idx];
+			
 			//epipolar 제약
 			if (!CommonUtils::Geometry::CheckDistEpipolarLine(prevPt, pt, F12, mpRefKF->mvLevelSigma2[kp.octave]))
 				continue;
 
-			////이전 프레임에서 키포인트 정보
-			//tempMatchingPrevKP.push_back(kp);
-			//tempPrevDesc.push_back(mmpBBs[prevId]->mDescriptors.row(prevIdx));
-
-			//kp.pt = pt;
-			//tempMatchingCurrKP.push_back(kp);
-
 			//매칭 결과
-			vecIDXs.push_back(i);
-
 			//인스턴스 연결
-			auto pid = seg.at<uchar>(prevPt);
-			auto cid = pTarget->seg.at<uchar>(pt);
-			//auto cid = pNewBF->seg.at<uchar>(pt);
-			vecPairMatches.push_back(std::make_pair(pid, cid));
+			auto pid = mvnInsIDs[idx];
+			auto cid = pTarget->GetInstance(pt);
 
+			vecIDXs.push_back(idx);
+			vecPairMatches.push_back(std::make_pair(pid, cid));
+			vecPairVisualizedMatches.push_back(std::make_pair(kp.pt, pt));
 		}
-		
+		//std::cout << vecIDXs.size() << " " << ntest << std::endl;
 	}
 
 	//이미지에서 옵티컬플로우로 매칭된 포인트의 위치 대응하는 인스턴스 아이디를 알려줌.
@@ -276,6 +594,7 @@ namespace ObjectSLAM {
 		
 		int nfound = vecPrevCorners.size();
 		//매칭 결과, 매칭 위치, 인스턴스 아이디를 tuple로 저장하기
+		
 		for (int i = 0; i < nfound; ++i) {
 			if (!features_found[i]) {
 				continue;
@@ -311,7 +630,7 @@ namespace ObjectSLAM {
 			vecIDXs.push_back(i);
 
 			//인스턴스 연결
-			auto pid = seg.at<uchar>(prevPt);
+			auto pid = this->GetInstance(prevPt);
 			//auto cid = pNewBF->seg.at<uchar>(pt);
 			vecPairMatches.push_back(std::make_pair(prevId, pt));
 
@@ -324,7 +643,7 @@ namespace ObjectSLAM {
 		for (auto pair : mmpBBs) {
 			int id = pair.first;
 			auto pIns = pair.second;
-			int label = pIns->mnLabel;
+			int label = pIns->mpConfLabel->label;
 			if (pIns->mbIsthing)
 				label += 100;
 			matLabelCount.at<ushort>(label) = matLabelCount.at<ushort>(label)+1;
@@ -369,7 +688,7 @@ namespace ObjectSLAM {
 		if (idx < 0)
 			return -1;
 		auto pt = pKF->mvKeys[idx].pt;
-		auto sid = seg.at<uchar>(pt);
+		auto sid = GetInstance(pt);
 		if (!mmpBBs.count(sid))
 			return -1;
 		return sid;
@@ -382,19 +701,23 @@ namespace ObjectSLAM {
 		if (idx < 0)
 			return nullptr;
 		auto pt = pKF->mvKeys[idx].pt;
-		auto sid = seg.at<uchar>(pt);
+		auto sid = GetInstance(pt);
 		if (!mmpBBs.count(sid))
 			return nullptr;
 		return mmpBBs[sid];
 	}
 
 	void BoxFrame::Copy(EdgeSLAM::Frame* pF) {
+		
 		for (int i = 0; i < pF->N; i++) {
 			auto kp = pF->mvKeys[i];
-			pF->mvKeys.push_back(kp);
+			mvKeyDatas.push_back(kp);
+			mUsed.at<int>(cv::Point(kp.pt)) = i + 1;
 		}
+		
 		mDescriptors = pF->mDescriptors.clone();
 		Init();
+		
 	}
 
 	void BoxFrame::ConvertBoxToFrame(int w, int h) {
@@ -418,16 +741,20 @@ namespace ObjectSLAM {
 	void BoxFrame::Init() {
 		
 		mpKC->Init(mpCamera->bDistorted, mpCamera->K, mpCamera->D);
-
+		
 		mpSC->Init(N);
 		/*UndistortKeyDatas(mpCamera->K, mpCamera->D);*/
-
+		
 		bool bDepth = mpCamera->mCamSensor == BaseSLAM::CameraSensor::RGBD;
 		if (bDepth) {
 			mpSC->ComputeStereoFromRGBD(depth, mbf, mpKC);
 		}
-
-		mvLabels = std::vector<int>(N, -1);
+		
+		mvnInsIDs = std::vector<int>(N, -1);
+		//mvpConfLabels = std::vector<EdgeSLAM::SemanticConfLabel*>(N, nullptr);
+		/*for (int i = 0; i < N; i++){
+			mvpConfLabels[i] = new EdgeSLAM::SemanticConfLabel();
+		}*/
 
 		////box 초기화
 		//for (int j = 0; j < N; j++) {
@@ -496,5 +823,21 @@ namespace ObjectSLAM {
 
 			std::cout << j << " " <<" "<<pBB->origin.t() <<" == " << pBB->n1 << " " << pBB->n2 << std::endl;
 		}
+	}
+
+	void BoxFrame::InitInstance(const cv::Mat& mapInstance){
+		{
+			std::unique_lock<std::mutex> lock(mMutexInstance);
+			seg = mapInstance.clone();
+		}
+	}
+
+	int BoxFrame::GetInstance(const cv::Point& pt){
+		std::unique_lock<std::mutex> lock(mMutexInstance);
+		return seg.at<uchar>(pt);
+	}
+	void BoxFrame::SetInstance(const cv::Point& pt, int _sid){
+		std::unique_lock<std::mutex> lock(mMutexInstance);
+		seg.at<uchar>(pt) = _sid;
 	}
 }

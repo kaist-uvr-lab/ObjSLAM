@@ -4,6 +4,7 @@
 #include <BoxFrame.h>
 #include <KeyFrame.h>
 #include <MapPoint.h>
+#include <SemanticLabel.h>
 
 namespace ObjectSLAM {
 
@@ -73,27 +74,27 @@ namespace ObjectSLAM {
             float pcount = (float)ppair.second;
 
             auto prevIns = prev->mmpBBs[pid];
-            auto plabel = prevIns->mnLabel;
-            auto pIsthing = prevIns->mbIsthing || (!prevIns->mbIsthing && plabel == 0);
-            bool bPrevTable = (plabel == 60 && pIsthing) || (plabel == 42 && !pIsthing);
+            int plabel = prevIns->mpConfLabel->label;
+            auto pIsthing = prevIns->isObject();
+            bool bPrevTable = prevIns->isTable();
 
             for (auto cpair : mapCurrCount) {
                 int cid = cpair.first;
                 float ccount = (float)cpair.second;
                 
                 auto currIns = curr->mmpBBs[cid];
-                auto clabel = currIns->mnLabel;
-                auto cIsthing = currIns->mbIsthing || (!currIns->mbIsthing && clabel == 0);
-                bool bCurrTable = (clabel == 60 && cIsthing) || (clabel == 42 && !cIsthing);
+                int clabel = currIns->mpConfLabel->label;
+                auto cIsthing = currIns->mbIsthing;
+                bool bCurrTable = currIns->isTable();
                 
                 auto pair = std::make_pair(pid, cid);
                 float count = (float)mapLinkCount[pair];
 
-                /*if (count == 0)
-                    continue;*/
-
                 float sum = pcount + ccount - count;
                 float val = count / sum;
+
+                if (count < 5)
+                    continue;
 
                 {
                     auto pratio = count / pcount;
@@ -191,29 +192,32 @@ namespace ObjectSLAM {
         cv::Mat iou_matrix = cv::Mat::zeros(maxPrev+1, maxCurr+1, CV_32F);
         for (auto ppair : mapPrevCount) {
             int pid = ppair.first;
-            auto tempPrevID = pid;
+            auto oriPrevID = pid;
             float pcount = (float)ppair.second;
 
             auto prevIns = prev->mmpBBs[pid];
-            auto plabel = prevIns->mnLabel;
-            auto pIsthing = prevIns->mbIsthing || (!prevIns->mbIsthing && plabel == 0);
-            bool bPrevTable = (plabel == 60 && pIsthing) || (plabel == 42 && !pIsthing);
+            int plabel = prevIns->mpConfLabel->label;
+            auto pIsthing = prevIns->mbIsthing;
+            bool bPrevTable = prevIns->isTable();
 
             for (auto cpair : mapCurrCount) {
                 int cid = cpair.first;
-                auto tempCurrID = cid;
+                auto oriCurrID = cid;
                 float ccount = (float)cpair.second;
                 
                 auto currIns = curr->mmpBBs[cid];
-                auto clabel = currIns->mnLabel;
-                auto cIsthing = currIns->mbIsthing || (!currIns->mbIsthing && clabel == 0);
-                bool bCurrTable = (clabel == 60 && cIsthing) || (clabel == 42 && !cIsthing);
+                int clabel = currIns->mpConfLabel->label;
+                auto cIsthing = currIns->mbIsthing;
+                bool bCurrTable = currIns->isTable();
                 
                 auto pair = std::make_pair(pid, cid);
                 float count = (float)mapLinkCount[pair];
 
                 float sum = pcount + ccount - count;
                 float val = count / sum;
+
+                if (count < 5)
+                    continue;
 
                 {
                     
@@ -243,8 +247,18 @@ namespace ObjectSLAM {
                     //    //포인트 추가
                     //}
 
+                    ////curr에 추가
+                    if (bNotInstance && pratio > 0.9 && pIsthing && bCurrTable && !bPrevTable) {//prevIns->mbDetected && 
+                        cv::Mat newCol = cv::Mat::zeros(maxPrev + 1, 1, CV_32F);
+                        cv::hconcat(iou_matrix, newCol, iou_matrix);
+                        cid = ++maxCurr;
+                        val = pratio;
+                        pair.second = cid;
+                        bMerge = true;
+                    }
+
                     ////prev에 추가
-                    if (bNotInstance && cratio > 0.8 && cIsthing && bPrevTable && !bCurrTable) {
+                    if (bNotInstance && cratio > 0.9 && cIsthing && bPrevTable && !bCurrTable) {//currIns->mbDetected && 
                         cv::Mat newRow = cv::Mat::zeros(1, maxCurr + 1, CV_32F);
                         cv::vconcat(iou_matrix, newRow, iou_matrix);
                         pid = ++maxPrev;
@@ -253,7 +267,7 @@ namespace ObjectSLAM {
                         bMerge = true;
                     }
                     if (bMerge) {
-                        mapChanged[std::make_pair(tempPrevID, tempCurrID)] = std::make_pair(pid, cid);
+                        mapChanged[std::make_pair(oriPrevID, oriCurrID)] = std::make_pair(pid, cid);
                     }
                 }
 
@@ -296,8 +310,8 @@ namespace ObjectSLAM {
                 std::cout << "link::err::position error::"<<prev->mnId<<" "<<curr->mnId<<"==" << currPt << prevPt << std::endl;
             }
 
-            int pid = prev->seg.at<uchar>(prevPt);
-            int cid = curr->seg.at<uchar>(currPt);
+            int pid = prev->GetInstance(prevPt);
+            int cid = curr->GetInstance(currPt);
 
             if (pid < 0 || pid > 200 || cid < 0 || cid > 200)
             {

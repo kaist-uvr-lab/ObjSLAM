@@ -31,11 +31,11 @@ namespace ObjectSLAM {
 		virtual~ObjectSLAM() {
 			ObjectMaps.Release();
 		}
-
+		void UpdateMapPoint(BoxFrame* pF);
 		std::vector<BoxFrame*> GetConnectedBoxFrames(EdgeSLAM::KeyFrame* pKF, int nn = 20);
 	public:
 		ConcurrentMap<BaseSLAM::BaseDevice*, ObjectDevice*> MapObjectDevices;
-		ConcurrentMap<EdgeSLAM::KeyFrame*, BoxFrame*> MapKeyFrameNBoxFrame;
+		ConcurrentMap<int, BoxFrame*> MapKeyFrameNBoxFrame;
 		ConcurrentMap<int, ObjectMap*> ObjectMaps;
 	};
 }

@@ -18,9 +18,11 @@ namespace EdgeSLAM {
 	class Frame;
 	class MapPoint;
 	class SemanticConfidence;
+	class SemanticConfLabel;
 }
 
 namespace ObjectSLAM {
+	//class ObjectSLAM;
 	class BoundingBox;
 	class SegInstance;
 	class NewBoxFrame {
@@ -64,13 +66,18 @@ namespace ObjectSLAM {
 		void ConvertInstanceToFrame(std::vector<std::pair<int, int>>& vPairFrameAndBox, std::vector<cv::Point2f>& vecCorners);
 		void ConvertBoxToFrame(int w, int h);
 
+		void InitInstance(const cv::Mat& mapInstance);
 		void Init();
 		void BaseObjectRegistration(EdgeSLAM::KeyFrame* pNewKF);
 
-		void UpdateInstanceKeyPoints(const std::vector<std::pair<int, int>>& vecMatches, const std::vector<int>& vecIDXs, const std::vector<std::pair<int, int>>& vPairFrameAndBox, std::map < std::pair<int, int>, std::pair<int, int>>& mapChangedIns);
+		void UpdateInstanceKeyPoints(const std::vector<std::pair<cv::Point2f, cv::Point2f>>& vecPairPoints, const std::vector<std::pair<int, int>>& vecMatches, std::map < std::pair<int, int>, std::pair<int, int>>& mapChangedIns);
+		void UpdateInstanceKeyPoints(const std::vector<std::pair<int, int>>& vecMatches, const std::vector<int>& vecIDXs, std::map < std::pair<int, int>, std::pair<int, int>>& mapChangedIns);
 		void UpdateInstances(BoxFrame* pTarget, const std::map < std::pair<int, int>, std::pair<int, int>>& mapChanged);
 		void UpdateInstances(BoxFrame* pTarget, const std::map<int,int>& mapLinkIDs);
-		void MatchingWithFrame(BoxFrame* pTarget, std::vector<int>& vecIDXs, std::vector<std::pair<int, int>>& vecPairMatches, std::vector<std::pair<int, int>>& vecPairPointIdxInBox);
+		
+		void MatchingFrameWithDenseOF(BoxFrame* pTarget, std::vector<cv::Point2f>& vecPoints1, std::vector<cv::Point2f>& vecPoints2, int scale = 1);
+		void MatchingWithFrame(EdgeSLAM::Frame* pTarget, const cv::Mat& fgray, std::vector<int>& vecInsIDs, std::map<int, int>& mapInsNLabel, std::vector<cv::Point2f>& vecCorners);
+		void MatchingWithFrame(BoxFrame* pTarget, std::vector<int>& vecIDXs, std::vector<std::pair<int, int>>& vecPairMatches, std::vector<std::pair<cv::Point2f, cv::Point2f>>& vecPairVisualizedMatches);
 		void MatchingWithFrame(const cv::Mat& image, const cv::Mat& T, const cv::Mat& K2, std::vector<int>& vecIDXs, std::vector<std::pair<int, cv::Point2f>>& vecPairMatches);
 
 		int GetFrameInstanceId(EdgeSLAM::MapPoint* pMP);
@@ -79,26 +86,36 @@ namespace ObjectSLAM {
 		void InitLabelCount(int N = 200);
 		cv::Mat matLabelCount;
 
+		int GetInstance(const cv::Point& pt);
+		void SetInstance(const cv::Point& pt, int _sid);
+
 	public:
 		BaseSLAM::BaseDevice* mpDevice;
 		EdgeSLAM::KeyFrame* mpRefKF;
+		BoxFrame* mpPrevBF;
 		//yolo
 		std::vector<BoundingBox*> mvpBBs;
 		//detectron2
 		std::map<int, SegInstance*> mmpBBs;
 		
-		//label vector
-		std::vector<int> mvLabels;
+		//키포인트에 인스턴스 id를 빠르게 연결
+		std::vector<int> mvnInsIDs;
+		//std::vector<EdgeSLAM::SemanticConfLabel*> mvpConfLabels;
 
-		cv::Mat img, gray;
+		cv::Mat img, gray, edge;
 		cv::Mat depth;
 		cv::Mat labeled;
-		//cv::Mat mUsed;
+		cv::Mat mUsed;
 		//cv::Mat origin;  
 
-		cv::Mat seg;
-		std::map<int, cv::Mat> sinfos;
 		std::atomic<int> mnMaxID;
+
+		std::atomic<bool> mbInitialized;
+		//처음에 초기화로만?
+		std::map<int, cv::Mat> sinfos;
+	private:
+		cv::Mat seg;
+		std::mutex mMutexInstance;
 	public:
 		//매칭 가능한 정보들 추가
 		BaseSLAM::KeyPointContainer* mpKC;

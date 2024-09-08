@@ -18,6 +18,10 @@
 #include <AbstractPose.h>
 #include <ObjectSLAMTypes.h>
 
+namespace EdgeSLAM {
+	class SemanticConfLabel;
+}
+
 namespace ObjectSLAM {
 
 	class BoxFrame;
@@ -27,7 +31,7 @@ namespace ObjectSLAM {
 	class SegInstance : public BaseSLAM::AbstractFrame, public BaseSLAM::KeyPointContainer, public BaseSLAM::StereoDataContainer, public ObjPointContainer {
 	public:
 		SegInstance() {}
-		SegInstance(BoxFrame* _ref, int _fx, int _fy, int _cx, int _cy, int _label, float _conf, bool _thing, BaseSLAM::BaseDevice* Device);
+		SegInstance(BoxFrame* _ref, int _fx, int _fy, int _cx, int _cy, int _label, float _conf, bool _thing, BaseSLAM::BaseDevice* Device, bool _bdetected);
 		virtual ~SegInstance() {}
 		bool isBad() {
 			return mbBad;
@@ -79,27 +83,14 @@ namespace ObjectSLAM {
 			BaseSLAM::StereoDataContainer::Init(N);
 		}
 
-		bool isTable() {
-			return (mnLabel == 60 && mbIsthing) || (mnLabel == 42 && !mbIsthing);
-		}
-		bool isFloor() {
-			return (mnLabel == 8 || mnLabel == 43) && !mbIsthing;
-		}
-		bool isCeiling() {
-			return (mnLabel == 39) && !mbIsthing;
-		}
-		bool isWall() {
-			//30, 31, 32, 33, 52
-			//return (label == 8 || label == 43) && !bIsThing;
-		}
-
-		bool isObject() {
-			return mbIsthing || (!mbIsthing && mnLabel == 0);
-		}
-
-		bool isStaticObject() {
-			return (isTable() || isFloor() || isCeiling());
-		}
+		bool isTable();
+		bool isFloor();
+		bool isTable(int _label, bool _thing);
+		bool isFloor(int _label, bool _thing);
+		bool isCeiling();
+		bool isWall();
+		bool isObject();
+		bool isStaticObject();
 
 		cv::Mat GetCenter();
 		cv::Mat GetPose();
@@ -129,9 +120,13 @@ namespace ObjectSLAM {
 		BaseSLAM::AbstractCamera* mpCamera;
 		BaseSLAM::AbstractPose* mpWorldPose;
 		static std::atomic<int> nSegInstanceId;
-		int mnLabel;
+		
 		std::string mStrLabel;
-		float mfConfidence;
+		bool mbDetected;
+
+		//int mnLabel;
+		//float mfConfidence;
+
 		bool mbIsthing;
 		cv::Rect mRect;
 		BoxFrame* mpRef;
@@ -141,6 +136,7 @@ namespace ObjectSLAM {
 
 		std::atomic<int> mnConnected;
 		ConcurrentSet<SegInstance*> mConnectedInstances;
+		EdgeSLAM::SemanticConfLabel* mpConfLabel;
 		void UpdateInstance(SegInstance* pConnected);
 	};
 }
