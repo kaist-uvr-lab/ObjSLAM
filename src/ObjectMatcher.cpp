@@ -1,9 +1,284 @@
 #include <ObjectMatcher.h>
 #include <Utils.h>
+#include <Utils_Geometry.h>
+#include <Frame.h>
+#include <KeyFrame.h>
+#include <ObjectMatchingInfo.h>
 
 namespace ObjectSLAM {
 
-	const int ObjectMatcher::HISTO_LENGTH = 30;
+	const  int ObjectMatcher::HISTO_LENGTH = 30;
+
+	int ObjectMatcher::SearchInstance(EdgeSLAM::Frame* pTarget, BoxFrame* pRef, const cv::Mat& gray1, const cv::Mat& gray2, ObjectMatchingInfo* pMatches) {
+
+		auto pSeg = pRef->mapMasks.Get("yoloseg");
+		
+		std::vector<cv::Point2f> corners;
+		//cv::goodFeaturesToTrack(gray2, pMatches->vecReferenceCorners, 1000, 0.01, 10, pSeg->mask);
+		
+		auto pSegIns = pSeg->instance.Get();
+		for (auto pair : pSegIns)
+		{
+			pMatches->vecReferenceCorners.push_back(pair.second->pt);
+			/*std::vector<cv::Point2f> corners;
+			cv::goodFeaturesToTrack(gray2, corners, 5, 0.01, 10, pair.second->mask);
+			for (auto pt : corners)
+			{
+				pMatches->vecReferenceCorners.push_back(pt);
+			}*/
+			
+		}
+
+		/*for (auto pt : corners)
+		{
+			int label = pSeg->mask.at<uchar>(pt);
+			if (label < 1)
+			{
+				continue;
+			}
+			pMatches->vecReferenceCorners.push_back(pt);
+		}*/
+		
+		std::vector<int> vecInsIDs;
+		std::vector<int> idxs;
+		/*for (auto pair : pSeg->instance)
+		{
+			auto pIns = pair.second;
+			auto label = pair.first;
+			if (label > 0) {
+				pMatches->vecReferenceCorners.push_back(pIns->pt);
+				vecInsIDs.push_back(label);
+			}
+			
+		}*/
+		
+		/*for (auto kp : pRef->mvKeyDatas)
+		{
+			int label = pSeg->mask.at<uchar>(kp.pt);
+			if (label < 1)
+			{
+				continue;
+			}
+			pMatches->vecReferenceCorners.push_back(kp.pt);
+			vecInsIDs.push_back(label);
+		}*/
+		
+		if (pMatches->vecReferenceCorners.size() == 0)
+			return 0;
+		
+		int win_size = 10;
+		cv::calcOpticalFlowPyrLK(
+			gray2,                         // Previous image
+			gray1,                         // Next image
+			pMatches->vecReferenceCorners,                     // Previous set of corners (from imgA)
+			pMatches->vecTargetCorners,                     // Next set of corners (from imgB)
+			pMatches->vecFounds,               // Output vector, each is 1 for tracked
+			cv::noArray(),                // Output vector, lists errors (optional)
+			cv::Size(win_size * 2 + 1, win_size * 2 + 1),  // Search window size
+			5,                            // Maximum pyramid level to construct
+			cv::TermCriteria(
+				cv::TermCriteria::MAX_ITER | cv::TermCriteria::EPS,
+				20,                         // Maximum number of iterations
+				0.3                         // Minimum change per iteration
+			)
+		);
+
+		auto pKF = pRef->mpRefKF;
+
+		//에피폴라 제약을 이용한 매칭 에러 체크
+		cv::Mat T1 = pTarget->GetPose();
+		cv::Mat R1 = T1.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t1 = T1.rowRange(0, 3).col(3);
+		const cv::Mat T2 = pKF->GetPose();
+		cv::Mat R2 = T2.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t2 = T2.rowRange(0, 3).col(3);
+		const cv::Mat K1 = pTarget->K.clone();
+		const cv::Mat K2 = pKF->K.clone();
+		cv::Mat F12 = CommonUtils::Geometry::ComputeF12(R1, t1, R2, t2, K1, K2);
+
+		int res = 0;
+		int inc = 0;
+		for (int i = 0; i < pMatches->vecFounds.size(); ++i) {
+			if (!pMatches->vecFounds[i]) {
+				continue;
+			}
+			auto targetPt = pMatches->vecTargetCorners[i];
+			auto referencePt = pMatches->vecReferenceCorners[i];
+
+			//디스크립터 계산용. 
+			if (referencePt.x <= inc || referencePt.x >= gray2.cols - inc || referencePt.y <= inc || referencePt.y >= gray2.rows - inc) {
+				pMatches->vecFounds[i] = false;
+				continue;
+			}
+			
+			//epipolar 제약
+			if (!CommonUtils::Geometry::CheckDistEpipolarLine(targetPt, referencePt, F12, 1.0)) {
+				pMatches->vecFounds[i] = false;
+				continue;
+			}
+
+			res++;
+		}
+		return res;
+	}
+
+	int ObjectMatcher::SearchByOpticalFlow(EdgeSLAM::Frame* pTarget, EdgeSLAM::KeyFrame* pRef, const cv::Mat& gray1, const cv::Mat& gray2, ObjectMatchingInfo* pMatches) {
+		
+		std::vector<int> idxs;
+		for (int i = 0; i < pTarget->N; i++) {
+			pMatches->vecTargetCorners.push_back(pTarget->mvKeys[i].pt);
+		}
+
+		if (pMatches->vecTargetCorners.size() < 10)
+			return 0;
+
+		cv::Mat mUsed = cv::Mat::zeros(gray2.size(), CV_32SC1);
+		for (int i = 0; i < pRef->N; i++) {
+			auto kp = pRef->mvKeys[i];
+			//해당 매트릭스에 kp의 인덱스를 넣음.
+			//0부터 시작이라 +1을 함. 이 매트릭스 이용시 -1 해야 함.
+			mUsed.at<int>(cv::Point(kp.pt)) = i + 1;
+		}
+
+
+		int win_size = 10;
+		cv::calcOpticalFlowPyrLK(
+			gray1,                         // Previous image
+			gray2,                         // Next image
+			pMatches->vecTargetCorners,                     // Previous set of corners (from imgA)
+			pMatches->vecReferenceCorners,                     // Next set of corners (from imgB)
+			pMatches->vecFounds,               // Output vector, each is 1 for tracked
+			cv::noArray(),                // Output vector, lists errors (optional)
+			cv::Size(win_size * 2 + 1, win_size * 2 + 1),  // Search window size
+			5,                            // Maximum pyramid level to construct
+			cv::TermCriteria(
+				cv::TermCriteria::MAX_ITER | cv::TermCriteria::EPS,
+				20,                         // Maximum number of iterations
+				0.3                         // Minimum change per iteration
+			)
+		);
+
+		//에피폴라 제약을 이용한 매칭 에러 체크
+		cv::Mat T1 = pTarget->GetPose();
+		cv::Mat R1 = T1.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t1 = T1.rowRange(0, 3).col(3);
+		const cv::Mat T2 = pRef->GetPose();
+		cv::Mat R2 = T2.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t2 = T2.rowRange(0, 3).col(3);
+		const cv::Mat K1 = pTarget->K.clone();
+		const cv::Mat K2 = pRef->K.clone();
+		cv::Mat F12 = CommonUtils::Geometry::ComputeF12(R1, t1, R2, t2, K1, K2);
+
+		int res = 0;
+		int inc = 0;
+		for (int i = 0; i < pMatches->vecFounds.size(); ++i) {
+			if (!pMatches->vecFounds[i]) {
+				continue;
+			}
+			auto targetPt = pMatches->vecTargetCorners[i];
+			auto referencePt = pMatches->vecReferenceCorners[i];
+
+			auto kp = pTarget->mvKeys[i];
+
+			//디스크립터 계산용. 
+			if (referencePt.x <= inc || referencePt.x >= gray2.cols - inc || referencePt.y <= inc || referencePt.y >= gray2.rows - inc){
+				pMatches->vecFounds[i] = false;
+				continue;
+			}
+			//epipolar 제약
+			if (!CommonUtils::Geometry::CheckDistEpipolarLine(targetPt, referencePt, F12, pTarget->mvLevelSigma2[kp.octave])) {
+				pMatches->vecFounds[i] = false;
+				continue;
+			}
+
+			int idx2 = mUsed.at<int>(cv::Point(referencePt));
+			if (idx2 > 0) {
+				pMatches->vecTargetIdxs.push_back(i);
+				pMatches->vecRefIdxs.push_back(--idx2);
+			}
+
+			res++;
+		}
+		return res;
+	}
+	int ObjectMatcher::SearchByOpticalFlow(EdgeSLAM::KeyFrame* pTarget, EdgeSLAM::KeyFrame* pRef, const cv::Mat& gray1, const cv::Mat& gray2, ObjectMatchingInfo* pMatches) {
+
+		std::vector<int> idxs;
+		for (int i = 0; i < pTarget->N; i++) {
+			pMatches->vecTargetCorners.push_back(pTarget->mvKeys[i].pt);
+		}
+
+		if (pMatches->vecTargetCorners.size() < 10)
+			return 0;
+
+		cv::Mat mUsed = cv::Mat::zeros(gray2.size(), CV_32SC1);
+		for (int i = 0; i < pRef->N; i++) {
+			auto kp = pRef->mvKeys[i];
+			//해당 매트릭스에 kp의 인덱스를 넣음.
+			//0부터 시작이라 +1을 함. 이 매트릭스 이용시 -1 해야 함.
+			mUsed.at<int>(cv::Point(kp.pt)) = i + 1;
+		}
+
+		int win_size = 10;
+		cv::calcOpticalFlowPyrLK(
+			gray1,                         // Previous image
+			gray2,                         // Next image
+			pMatches->vecTargetCorners,                     // Previous set of corners (from imgA)
+			pMatches->vecReferenceCorners,                     // Next set of corners (from imgB)
+			pMatches->vecFounds,               // Output vector, each is 1 for tracked
+			cv::noArray(),                // Output vector, lists errors (optional)
+			cv::Size(win_size * 2 + 1, win_size * 2 + 1),  // Search window size
+			5,                            // Maximum pyramid level to construct
+			cv::TermCriteria(
+				cv::TermCriteria::MAX_ITER | cv::TermCriteria::EPS,
+				20,                         // Maximum number of iterations
+				0.3                         // Minimum change per iteration
+			)
+		);
+
+		//에피폴라 제약을 이용한 매칭 에러 체크
+		cv::Mat T1 = pTarget->GetPose();
+		cv::Mat R1 = T1.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t1 = T1.rowRange(0, 3).col(3);
+		const cv::Mat T2 = pRef->GetPose();
+		cv::Mat R2 = T2.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t2 = T2.rowRange(0, 3).col(3);
+		const cv::Mat K1 = pTarget->K.clone();
+		const cv::Mat K2 = pRef->K.clone();
+		cv::Mat F12 = CommonUtils::Geometry::ComputeF12(R1, t1, R2, t2, K1, K2);
+
+		int res = 0;
+		int inc = 0;
+		for (int i = 0; i < pMatches->vecFounds.size(); ++i) {
+			if (!pMatches->vecFounds[i]) {
+				continue;
+			}
+			auto targetPt = pMatches->vecTargetCorners[i];
+			auto referencePt = pMatches->vecReferenceCorners[i];
+
+			auto kp = pTarget->mvKeys[i];
+
+			//디스크립터 계산용. 
+			if (referencePt.x <= inc || referencePt.x >= gray2.cols - inc || referencePt.y <= inc || referencePt.y >= gray2.rows - inc) {
+				pMatches->vecFounds[i] = false;
+				continue;
+			}
+			//epipolar 제약
+			if (!CommonUtils::Geometry::CheckDistEpipolarLine(targetPt, referencePt, F12, pTarget->mvLevelSigma2[kp.octave])) {
+				pMatches->vecFounds[i] = false;
+				continue;
+			}
+			
+			int idx2 = mUsed.at<int>(cv::Point(referencePt));
+			if (idx2 > 0) {
+				pMatches->vecTargetIdxs.push_back(i);
+				pMatches->vecRefIdxs.push_back(--idx2);
+			}
+
+			res++;
+		}
+		return res;
+	}
 
 	int ObjectMatcher::SearchFrameAndFrame(BoxFrame* pF1, BoxFrame* pF2, std::vector<std::pair<int, int>>& vecMatches, const float thRadius, const int thdist, const float thratio, bool bCheckOri) {
 		int nmatches = 0;

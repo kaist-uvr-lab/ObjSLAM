@@ -19,11 +19,12 @@ namespace EdgeSLAM {
 	class MapPoint;
 	class SemanticConfidence;
 	class SemanticConfLabel;
-}
+} 
 
 namespace ObjectSLAM {
 	//class ObjectSLAM;
 	class BoundingBox;
+	class BoxFrame;
 	class SegInstance;
 	class NewBoxFrame {
 	public:
@@ -40,7 +41,54 @@ namespace ObjectSLAM {
 		int N;
 	private:
 
+	}; 
+
+	class GlobalInstance {
+	public:
+		GlobalInstance();
+		virtual ~GlobalInstance() {
+
+		}
+	public:
+		void Connect(BoxFrame* pBF, int id) {
+			mapConnected.Update(pBF, id);
+		}
+	public:
+		int mnId;
+		ConcurrentMap<BoxFrame*, int> mapConnected;
+		static std::atomic<long unsigned int> mnNextGIId;
 	};
+
+	class Instance {
+	public:
+		Instance() : mpGlobal(nullptr), area(0.0){}
+		virtual ~Instance(){}
+	public:
+		GlobalInstance* mpGlobal;
+		cv::Mat mask;
+		cv::Rect rect;
+		cv::Point2f pt;
+		float area;
+		std::set<EdgeSLAM::MapPoint*> setMPs;
+	};
+
+	class InstanceMask {
+	public:
+		InstanceMask() :bInit(false), bRequest(true), id1(-1), id2(-1), nTrial(0), nMaxTrial(1){}
+		virtual ~InstanceMask() {}
+	public:
+		cv::Mat mask;
+		ConcurrentMap<int, Instance*> instance;
+		std::map<int, cv::Rect> rect;
+		std::map<int, std::pair<int, float>> info;
+		std::atomic<bool> bInit, bRequest;
+		std::atomic<char> nTrial, nMaxTrial;
+		std::vector<cv::Point2f> vecObjectPoints;
+		std::atomic<int> mnMaxId;
+		std::atomic<int> id1, id2; //id1 : target, id2 : reference
+	private:
+	};
+
 	class BoxFrame : public BaseSLAM::AbstractFrame, public BaseSLAM::KeyPointContainer, public BaseSLAM::StereoDataContainer {
 	public:
 		BoxFrame(int _id);
@@ -76,6 +124,7 @@ namespace ObjectSLAM {
 		void UpdateInstances(BoxFrame* pTarget, const std::map<int,int>& mapLinkIDs);
 		
 		void MatchingFrameWithDenseOF(BoxFrame* pTarget, std::vector<cv::Point2f>& vecPoints1, std::vector<cv::Point2f>& vecPoints2, int scale = 1);
+		void MatchingWithFrame(BoxFrame* pTarget, std::vector<std::pair<int, int>>& vecPairMatchIndex);
 		void MatchingWithFrame(EdgeSLAM::Frame* pTarget, const cv::Mat& fgray, std::vector<int>& vecInsIDs, std::map<int, int>& mapInsNLabel, std::vector<cv::Point2f>& vecCorners);
 		void MatchingWithFrame(BoxFrame* pTarget, std::vector<int>& vecIDXs, std::vector<std::pair<int, int>>& vecPairMatches, std::vector<std::pair<cv::Point2f, cv::Point2f>>& vecPairVisualizedMatches);
 		void MatchingWithFrame(const cv::Mat& image, const cv::Mat& T, const cv::Mat& K2, std::vector<int>& vecIDXs, std::vector<std::pair<int, cv::Point2f>>& vecPairMatches);
@@ -89,10 +138,34 @@ namespace ObjectSLAM {
 		int GetInstance(const cv::Point& pt);
 		void SetInstance(const cv::Point& pt, int _sid);
 
+		bool isTable(int _label) {
+			return _label == 160 || _label == 42;
+		}
+		bool isFloor(int _label) {
+			return (_label == 8 || _label == 43 || _label == 44);
+		}
+		bool isWall(int label)
+		{
+			return (label == 30 || label == 31 || label == 32 || label == 33 || label == 52);
+		}
+		bool isCeiling(int label)
+		{
+			return label == 39;
+		}
+		bool isStatic(int l)
+		{
+			return isFloor(l) || isCeiling(l) || isWall(l) || isTable(l);
+		}
+
 	public:
 		BaseSLAM::BaseDevice* mpDevice;
 		EdgeSLAM::KeyFrame* mpRefKF;
 		BoxFrame* mpPrevBF;
+
+
+		ConcurrentMap<std::string, InstanceMask*> mapMasks;
+
+
 		//yolo
 		std::vector<BoundingBox*> mvpBBs;
 		//detectron2
@@ -100,7 +173,7 @@ namespace ObjectSLAM {
 		
 		//키포인트에 인스턴스 id를 빠르게 연결
 		std::vector<int> mvnInsIDs;
-		//std::vector<EdgeSLAM::SemanticConfLabel*> mvpConfLabels;
+		std::vector<EdgeSLAM::SemanticConfLabel*> mvpConfLabels;
 
 		cv::Mat img, gray, edge;
 		cv::Mat depth;
@@ -111,8 +184,10 @@ namespace ObjectSLAM {
 		std::atomic<int> mnMaxID;
 
 		std::atomic<bool> mbInitialized;
+		std::atomic<bool> mbYolo, mbSam2, mbDetectron2;
 		//처음에 초기화로만?
 		std::map<int, cv::Mat> sinfos;
+		std::chrono::high_resolution_clock::time_point t_start;
 	private:
 		cv::Mat seg;
 		std::mutex mMutexInstance;

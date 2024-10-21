@@ -9,11 +9,19 @@
 #include <Utils_Geometry.h>
 
 namespace ObjectSLAM {
-	BoxFrame::BoxFrame(int _id) :BaseSLAM::AbstractFrame(_id), mbInitialized(false), mpPrevBF(nullptr)
+
+	std::atomic<long unsigned int> GlobalInstance::mnNextGIId = 0;
+
+	GlobalInstance::GlobalInstance():mnId(++mnNextGIId){
+	}
+
+	BoxFrame::BoxFrame(int _id) :BaseSLAM::AbstractFrame(_id), mbInitialized(false), mpPrevBF(nullptr), mbYolo(false), mbDetectron2(false), mbSam2(false)
 	{}
 	BoxFrame::BoxFrame(int _id, const int w, const int h, BaseSLAM::BaseDevice* Device, BaseSLAM::AbstractPose* _Pose) : BaseSLAM::AbstractFrame(Device, _Pose, _id), BaseSLAM::KeyPointContainer(mpCamera), BaseSLAM::StereoDataContainer(), mUsed(cv::Mat::zeros(h, w, CV_32SC1)),
+		mbYolo(false), mbDetectron2(false), mbSam2(false),
 		mpKC(this), mpSC(this), mpRefKF(nullptr), mpDevice(Device), mbInitialized(false), mpPrevBF(nullptr)
-	{}
+	{
+	}
 	BoxFrame::~BoxFrame() {
 		std::vector<BoundingBox*>().swap(mvpBBs);
 		img.release();
@@ -468,6 +476,95 @@ namespace ObjectSLAM {
 		auto du_test1 = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 		std::cout << "frame matching test = " << du_test1 << std::endl;*/
 	}
+
+	void BoxFrame::MatchingWithFrame(BoxFrame* pTarget, std::vector<std::pair<int, int>>& vecPairMatchIndex){
+		std::vector<cv::Point2f> vecPrevCorners, vecCurrCorners;
+		//ConvertInstanceToFrame(vecPairPointIdxInBox, vecPrevCorners);
+
+		std::vector<int> idxs;
+		for (int i = 0; i < N; i++) {
+			if (mvnInsIDs[i] >= 0) {
+				vecPrevCorners.push_back(mvKeyDatas[i].pt);
+				idxs.push_back(i);
+			}
+		}
+
+		std::vector<uchar> features_found;
+
+		if (vecPrevCorners.size() < 10)
+			return;
+
+		int win_size = 10;
+		cv::Mat pgray = gray.clone();
+		cv::Mat cgray = pTarget->gray.clone();
+		cv::calcOpticalFlowPyrLK(
+			pgray,                         // Previous image
+			cgray,                         // Next image
+			vecPrevCorners,                     // Previous set of corners (from imgA)
+			vecCurrCorners,                     // Next set of corners (from imgB)
+			features_found,               // Output vector, each is 1 for tracked
+			cv::noArray(),                // Output vector, lists errors (optional)
+			cv::Size(win_size * 2 + 1, win_size * 2 + 1),  // Search window size
+			5,                            // Maximum pyramid level to construct
+			cv::TermCriteria(
+				cv::TermCriteria::MAX_ITER | cv::TermCriteria::EPS,
+				20,                         // Maximum number of iterations
+				0.3                         // Minimum change per iteration
+			)
+		);
+
+		//에피폴라 제약을 이용한 매칭 에러 체크
+		cv::Mat T1 = GetPose();
+		cv::Mat R1 = T1.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t1 = T1.rowRange(0, 3).col(3);
+		const cv::Mat T2 = pTarget->GetPose();
+		cv::Mat R2 = T2.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t2 = T2.rowRange(0, 3).col(3);
+		const cv::Mat K2 = pTarget->mpRefKF->K.clone();
+		cv::Mat F12 = CommonUtils::Geometry::ComputeF12(R1, t1, R2, t2, K, K2);
+
+		int nfound = vecPrevCorners.size();
+
+		int ntest = 0;
+		//매칭 결과, 매칭 위치, 인스턴스 아이디를 tuple로 저장하기
+		std::unique_lock<std::mutex> lock(mMutexInstance);
+		for (int i = 0; i < nfound; ++i) {
+			if (!features_found[i]) {
+				continue;
+			}
+			auto currPt = vecCurrCorners[i];
+
+			//디스크립터 계산 가능한 영역 안의 키포인트 검출
+			if (currPt.x <= 0 || currPt.x >= cgray.cols || currPt.y <= 0 || currPt.y >= cgray.rows)
+				continue;
+			int idx2 = pTarget->mUsed.at<int>(cv::Point(currPt));
+			if (idx2 <=0) {
+				continue;
+			}
+			idx2--;
+			auto prevPt = vecPrevCorners[i];
+			int idx1 = idxs[i];
+			
+			auto kp1 = mvKeyDatas[idx1];
+			auto kp2 = pTarget->mvKeyDatas[idx2];
+
+			//epipolar 제약
+			if (!CommonUtils::Geometry::CheckDistEpipolarLine(prevPt, currPt, F12, mpRefKF->mvLevelSigma2[kp1.octave]))
+				continue;
+
+			//매칭 결과
+			//인스턴스 연결
+			//auto pid = this->GetInstance(prevPt);
+			//auto cid = pTarget->GetInstance(currPt);
+
+			vecPairMatchIndex.push_back(std::make_pair(idx1, idx2));
+
+			/*vecIDXs.push_back(idx);
+			vecPairMatches.push_back(std::make_pair(pid, cid));
+			vecPairVisualizedMatches.push_back(std::make_pair(kp.pt, pt));*/
+		}
+	}
+
 	void BoxFrame::MatchingWithFrame(BoxFrame* pTarget, std::vector<int>& vecIDXs, std::vector<std::pair<int, int>>& vecPairMatches, std::vector<std::pair<cv::Point2f, cv::Point2f>>& vecPairVisualizedMatches) {
 		
 		std::vector<cv::Point2f> vecPrevCorners, vecCurrCorners;
@@ -712,6 +809,8 @@ namespace ObjectSLAM {
 		for (int i = 0; i < pF->N; i++) {
 			auto kp = pF->mvKeys[i];
 			mvKeyDatas.push_back(kp);
+			//해당 매트릭스에 kp의 인덱스를 넣음.
+			//0부터 시작이라 +1을 함. 이 매트릭스 이용시 -1 해야 함.
 			mUsed.at<int>(cv::Point(kp.pt)) = i + 1;
 		}
 		
@@ -751,7 +850,7 @@ namespace ObjectSLAM {
 		}
 		
 		mvnInsIDs = std::vector<int>(N, -1);
-		//mvpConfLabels = std::vector<EdgeSLAM::SemanticConfLabel*>(N, nullptr);
+		mvpConfLabels = std::vector<EdgeSLAM::SemanticConfLabel*>(N, nullptr);
 		/*for (int i = 0; i < N; i++){
 			mvpConfLabels[i] = new EdgeSLAM::SemanticConfLabel();
 		}*/

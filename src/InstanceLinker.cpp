@@ -3,11 +3,137 @@
 #include <SegInstance.h>
 #include <BoxFrame.h>
 #include <KeyFrame.h>
+#include <Frame.h>
 #include <MapPoint.h>
 #include <SemanticLabel.h>
 
 namespace ObjectSLAM {
 
+    float ComputeSimFromIOU(Instance* a, Instance* b) {
+
+    }
+    float InstanceSim::ComputeSimFromPartialMP(Instance* a, EdgeSLAM::Frame* b){
+        
+        float nA = a->setMPs.size();
+        float nC = 0;
+        for (auto mp1 : a->setMPs)
+        {
+            if (!mp1 || mp1->isBad())
+                continue;
+        }
+        return 0.0;
+    }
+    float InstanceSim::ComputeSimFromPartialMP(Instance* a, EdgeSLAM::KeyFrame* pKF){
+        float nA = a->setMPs.size();
+        float nC = 0;
+        for (auto mp1 : a->setMPs)
+        {
+            if (!mp1 || mp1->isBad())
+                continue;
+            if (mp1->IsInKeyFrame(pKF))
+            {
+                nC++;
+            }
+        }
+        float res = nC / nA;
+        if (nA == 0)
+            res = 0.0;
+        return res;
+    }
+    float InstanceSim::ComputeSimFromPartialMP(Instance* a, Instance* b) {
+        float nA = a->setMPs.size();
+        float nC = 0;
+        for (auto mp1 : a->setMPs)
+        {
+            if (!mp1 || mp1->isBad())
+                continue;
+            for (auto mp2 : b->setMPs)
+            {
+                if (!mp2 || mp2->isBad())
+                    continue;
+                if (mp1 == mp2) {
+                    nC++;
+                }
+            }
+        }
+        float res = nC / nA;
+        if (nA == 0)
+            res = 0.0;
+        //std::cout << "sim test = " << res << " " << nC << std::endl;
+        return res;
+    }
+    float InstanceSim::ComputeSimFromMP(Instance* a, Instance* b) {
+        float nA = a->setMPs.size();
+        float nB = b->setMPs.size();
+        float nC = 0;
+        for (auto mp1 : a->setMPs)
+        {
+            if (!mp1 || mp1->isBad())
+                continue;
+            for (auto mp2 : b->setMPs)
+            {
+                if (!mp2 || mp2->isBad())
+                    continue;
+                if (mp1 == mp2) {
+                    nC++;
+                }
+            }
+        }
+        float nSum = nA + nB - nC;
+        float res = nC / nSum;
+        if (nSum == 0)
+            res = 0.0;
+        //std::cout << "sim test = " << res <<" "<<nC << std::endl;
+        return res;
+    }
+
+    void InstanceLinker::computeSim(BoxFrame* prev, BoxFrame* curr, const std::vector<std::pair<int, int>>& vecPairMatches, float iou_threshold) {
+
+
+        std::map<std::pair<int, int>, float> mapLinkCount;
+        std::map<int, float> mapPrevCount, mapCurrCount;
+        std::map<int, std::vector<int>> mapPrevInsPoints, mapCurrInsPoints;
+
+        for (auto pair : vecPairMatches) {
+            int idx1 = pair.first;
+            int idx2 = pair.second;
+
+            auto sid1 = prev->mvnInsIDs[idx1];
+            auto sid2 = curr->mvnInsIDs[idx2];
+            
+            if (sid1 > 0) {
+                mapPrevCount[sid1]++;
+                mapPrevInsPoints[sid1].push_back(idx1);
+            }
+            if (sid2 > 0) {
+                mapCurrCount[sid2]++;
+                mapCurrInsPoints[sid2].push_back(idx2);
+            }
+            if (sid1 > 0 && sid2 > 0) {
+                auto pairIns = std::make_pair(sid1, sid2);
+                mapLinkCount[pairIns]++;
+            }
+        }
+
+        for (auto pair : mapLinkCount) {
+            int idx1 = pair.first.first;
+            int idx2 = pair.first.second;
+
+            auto label1 = prev->mmpBBs[idx1]->mStrLabel;
+            auto label2 = curr->mmpBBs[idx2]->mStrLabel;
+
+            float count = pair.second;
+            float c1 = mapPrevCount[idx1];
+            float c2 = mapCurrCount[idx2];
+
+            float sum = c1 + c2 - count;
+            float r = count / sum;
+            float r1 = count / c1;
+            float r2 = count / c2;
+            std::cout << "link test = " << label1 << " " << label2 << " = " << r << " == " << r1 << " " << r2 << " " << std::endl;
+        }
+
+    }
     void InstanceLinker::computeFromMP (BoxFrame* prev, BoxFrame* curr, 
         const std::vector<std::pair<int, int>>& vecPairMatchInstance,
         std::map<int, int>& assignments, std::map<std::pair<int, int>, std::pair<int, int>>& mapChanged, float iou_threshold)

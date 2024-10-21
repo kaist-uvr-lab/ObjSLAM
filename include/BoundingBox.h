@@ -74,6 +74,7 @@ namespace ObjectSLAM {
 		
 		bool UnprojectStereo(int i, cv::Mat& Xw, cv::Mat& Xo, const cv::Mat& Rwc, const cv::Mat& twc);
 	public:
+
 		std::vector<int> mvIDXs;
 		std::map<int, int> mapIDXs;
 		//BaseSLAM::DataContainer<cv::KeyPoint> KDC;

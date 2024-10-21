@@ -26,15 +26,19 @@ namespace ObjectSLAM {
 					continue;
 				}
 				auto pBFi = MapKeyFrameNBoxFrame.Get(pKFi->mnFrameId);
+				if (idx < 0)
+					continue;
+				auto tempConfLabel = pBFi->mvpConfLabels[idx];
+				if (!tempConfLabel)
+					continue;
+				 
 				auto sid = pBFi->mvnInsIDs[idx];
 				if (sid < 0)
 					continue;
-
 				auto pIns = pBFi->mmpBBs[sid];
-				
-				auto tempConfLabel = pIns->mpConfLabel;
-
+				//auto tempConfLabel = pIns->mpConfLabel;
 				pConfLabel->Update(tempConfLabel->label, tempConfLabel->maxConf, pIns->mbIsthing);
+				
 			}
 			pMPi->mpConfLabel->label = pConfLabel->label.load();
 			pMPi->mpConfLabel->maxConf = pConfLabel->maxConf.load();

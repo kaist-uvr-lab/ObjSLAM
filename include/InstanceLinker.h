@@ -11,16 +11,34 @@
 #include <ObjectSLAMTypes.h>
 #include <HungarianMatcher.h>
 
+namespace EdgeSLAM {
+    class KeyFrame;
+    class Frame;
+}
+
 namespace ObjectSLAM {
 
 	class SegInstance;
     class BoxFrame;
+    class Instance;
+
+    class InstanceSim {
+    public:
+        static float ComputeSimFromMP(Instance* a, Instance* b);
+        static float ComputeSimFromPartialMP(Instance* a, Instance* b);
+        static float ComputeSimFromPartialMP(Instance* a, EdgeSLAM::Frame* b);
+        static float ComputeSimFromPartialMP(Instance* a, EdgeSLAM::KeyFrame* b);
+        static float ComputeSimFromIOU(Instance* a, Instance* b);
+    };
+
     class InstanceLinker {
     public:
         InstanceLinker(){}
         virtual ~InstanceLinker(){}
     public:
+
         //현재 프레임과 이전 프레임에 대해서 매칭함.
+        static void computeSim(BoxFrame* prev, BoxFrame* curr, const std::vector<std::pair<int, int>>& vecPairMatches, float iou_threshold = 0.5);
 
         static void compute(BoxFrame* prev, BoxFrame* curr, float iou_threshold = 0.5);
         static void computeFromOF(BoxFrame* prev, BoxFrame* curr,
