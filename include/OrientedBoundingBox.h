@@ -18,8 +18,6 @@ namespace ObjectSLAM {
 	public:
 		cv::Point3f center;
 		
-		
-		
 		std::vector<cv::Point3f> corners;
 		std::set<EdgeSLAM::MapPoint*> mspMPs;
 

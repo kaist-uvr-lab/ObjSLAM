@@ -26,11 +26,13 @@ namespace ObjectSLAM {
 	};
 	class ObjectSLAM {
 	public:
-		ObjectSLAM() : mbUsedYolo(false), mbUsedSam2(false), mbUsedDetectron2(false){
+		ObjectSLAM() : mbUsedYolo(false), mbUsedSam2(false), mbUsedDetectron2(false), mbSaveLatency(false){
 		}
 		virtual~ObjectSLAM() {
 			ObjectMaps.Release();
 		}
+		void SaveLatency(std::string keyword);
+		void SaveObjectAsso();
 		void UpdateMapPoint(BoxFrame* pF);
 		std::vector<BoxFrame*> GetConnectedBoxFrames(EdgeSLAM::KeyFrame* pKF, int nn = 20);
 	public:
@@ -75,6 +77,13 @@ namespace ObjectSLAM {
 			return idx;
 		}*/
 		
+
+		//save
+		bool mbSaveLatency;
+		ConcurrentMap<std::string, std::vector<double>> MapLatency;
+		
+		//save2
+		std::vector<std::string> vecObjectAssoRes;
 	};
 }
 #endif

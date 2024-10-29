@@ -8,6 +8,40 @@
 
 namespace ObjectSLAM {
 
+	void ObjectSLAM::SaveObjectAsso() {
+		std::stringstream ss;
+		ss << "../res/aaresasso/res.csv";
+
+		std::ofstream file;
+		file.open(ss.str(), std::ios::trunc);
+		ss.str("");
+		for (auto strres : vecObjectAssoRes) {
+			ss << strres << std::endl;
+		}
+		file.write(ss.str().c_str(), ss.str().size());
+		file.close();
+	}
+
+	void ObjectSLAM::SaveLatency(std::string keyword)
+	{
+		std::cout << "save " << keyword << std::endl;
+		
+		auto vecDatas = MapLatency.Get(keyword);
+		std::stringstream ss;
+		ss << "../res/aseglatency/" << keyword << ".csv";
+
+		std::ofstream file;
+		file.open(ss.str(), std::ios::app);
+		ss.str("");
+		for (int i = 0, N = vecDatas.size(); i < N; i++) {
+			ss << vecDatas[i]<<std::endl;
+		}
+		file.write(ss.str().c_str(), ss.str().size());
+		file.close();
+		
+		MapLatency.Update(keyword, std::vector<double>());
+		std::cout << "save " << keyword << "end"<<std::endl;
+	}
 	void ObjectSLAM::UpdateMapPoint(BoxFrame* pF) {
 		auto pKF = pF->mpRefKF;
 		for (int i = 0; i < pKF->N; i++) {

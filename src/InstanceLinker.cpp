@@ -7,10 +7,41 @@
 #include <MapPoint.h>
 #include <SemanticLabel.h>
 
+#include <ObjectSLAM.h>
+#include <Utils_Geometry.h>
+
 namespace ObjectSLAM {
 
-    float ComputeSimFromIOU(Instance* a, Instance* b) {
+    ObjectSLAM* InstanceLinker::ObjectSystem = nullptr;
 
+    void InstanceSim::FindOverlapMP(Instance* a, Instance* b, std::set<EdgeSLAM::MapPoint*>& setMPs){
+        for (auto mp1 : a->setMPs)
+        {
+            if (!mp1 || mp1->isBad())
+                continue;
+            for (auto mp2 : b->setMPs)
+            {
+                if (!mp2 || mp2->isBad())
+                    continue;
+                if (mp1 == mp2) {
+                    setMPs.insert(mp1);
+                }
+            }
+        }
+    }
+    void InstanceSim::FindOverlapMP(Instance* a, EdgeSLAM::Frame* pF, std::set<EdgeSLAM::MapPoint*>& setMPs) {
+
+    }
+    void InstanceSim::FindOverlapMP(Instance* a, EdgeSLAM::KeyFrame* pKF, std::set<EdgeSLAM::MapPoint*>& setMPs) {
+        for (auto mp1 : a->setMPs)
+        {
+            if (!mp1 || mp1->isBad())
+                continue;
+            if (mp1->IsInKeyFrame(pKF))
+            {
+                setMPs.insert(mp1);
+            }
+        }
     }
     float InstanceSim::ComputeSimFromPartialMP(Instance* a, EdgeSLAM::Frame* b){
         
@@ -85,6 +116,198 @@ namespace ObjectSLAM {
             res = 0.0;
         //std::cout << "sim test = " << res <<" "<<nC << std::endl;
         return res;
+    }
+
+    void InstanceLinker::SetSystem(ObjectSLAM* p) {
+        ObjectSystem = p;
+    }
+
+    void InstanceLinker::FindInstances(BoxFrame* pNewBF, BoxFrame* pPrevBF, std::set<int>& setMatchIDs, std::vector<cv::Point2f>& vecPoints, bool bShow) {
+        std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
+        auto pCurrSeg = pNewBF->mapMasks.Get("yoloseg");
+        auto pKF = pNewBF->mpRefKF;
+        auto pCurrSegInstances = pCurrSeg->instance.Get();
+        auto vpNeighBFs = ObjectSystem->GetConnectedBoxFrames(pKF, 10);
+        auto vpNeighKFs = pKF->GetBestCovisibilityKeyFrames(10);
+
+        cv::Mat K = pKF->K.clone();
+        cv::Mat T = pKF->GetPose();
+        cv::Mat R = pKF->GetRotation();
+        cv::Mat t = pKF->GetTranslation();
+
+        int ntest = 0;
+        std::set<BoxFrame*> spNeighBFs;
+        std::set<GlobalInstance*> spNeighGlobalIns;
+        for (auto pBF : vpNeighBFs) {
+
+            if (pBF == pPrevBF)
+                continue;
+
+            if (pBF->mapMasks.Count("yoloseg"))
+            {
+                spNeighBFs.insert(pBF);
+                auto mapIns = pBF->mapMasks.Get("yoloseg")->instance.Get();
+                for (auto pair : mapIns)
+                {
+                    auto id = pair.first;
+                    auto pIns = pair.second;
+                    if (pIns->mpGlobal)
+                    {
+                        auto pGlobal = pIns->mpGlobal;
+                        if (!spNeighGlobalIns.count(pGlobal) && !setMatchIDs.count(pGlobal->mnId))
+                            spNeighGlobalIns.insert(pGlobal);
+                    }
+                }
+            }
+        }
+        if(bShow)
+            std::cout << "missing global " << spNeighGlobalIns.size() << std::endl;
+        int nTotal = 0;
+        for (auto pG : spNeighGlobalIns) {
+            auto spMPs = pG->AllMapPoints.Get();
+            int nCount = 0;
+            for (auto pMP : spMPs)
+            {
+                if (!pMP || pMP->isBad())
+                    continue;
+                if (pMP->IsInKeyFrame(pKF))
+                {
+                    nCount++;
+                }
+            }
+            if (nCount > 5)
+            {
+                auto pt = pG->ProjectPoint(T, K);
+                if (pt.x > 0 && pt.x < 640 && pt.y > 0 && pt.y < 480)
+                {
+                    vecPoints.push_back(pt);
+                    nTotal++;
+                }
+            }
+            if(bShow && nCount > 5)
+                std::cout << "test global = " << pG->mnId << " " << nCount <<" == "<< pG->mapConnected.Size()<<","<<spMPs.size() << std::endl;
+            if (nTotal > 5)
+                break;
+        }
+
+        if(false)
+        for (auto apPrevBF : vpNeighBFs) {
+            if (!apPrevBF->mapMasks.Count("yoloseg"))
+                continue;
+            auto pPrevSeg = apPrevBF->mapMasks.Get("yoloseg");
+            auto pPrevInstances = pPrevSeg->instance.Get();
+
+            for (auto pair : pPrevInstances)
+            {
+                if (pair.first == 0)
+                    continue;
+                auto pPrevIns = pair.second;
+                std::set<EdgeSLAM::MapPoint*> setMPs;
+                float nMP = pPrevIns->setMPs.size();
+                InstanceSim::FindOverlapMP(pPrevIns, pKF, setMPs);
+
+                if (setMPs.size() > 5)
+                {
+                    cv::Point2f avgPt(0, 0);
+                    int n = 0;
+                    for (auto pMP : setMPs)
+                    {
+                        if (!pMP || pMP->isBad())
+                            continue;
+                        cv::Point2f pt;
+                        float depth;
+                        CommonUtils::Geometry::ProjectPoint(pt, depth, pMP->GetWorldPos(), K, R, t);
+                        if (depth > 0.0)
+                        {
+                            n++;
+                            avgPt += pt;
+                        }
+                    }
+                    if (n > 0)
+                    {
+                        avgPt /= n;
+                        vecPoints.push_back(avgPt);
+                    }
+                    
+                    auto pG = pPrevIns->mpGlobal;
+                    if (pG && pG->mapConnected.Count(pNewBF)) {
+                        int idx = pG->mapConnected.Get(pNewBF);
+                        if (!setMatchIDs.count(idx))
+                        {
+                            
+                        }
+                    }
+                    ntest++;
+                    //std::cout << "test = " << setMPs.size() << " " << nMP << std::endl;
+                }
+            }
+        }
+        if (bShow)
+        {
+            std::chrono::high_resolution_clock::time_point t_end = std::chrono::high_resolution_clock::now();
+            auto du_seg = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+
+            std::cout << "test ~~~~~~~~~~"<< pNewBF->mnId<<" == " << du_seg << ", " << vecPoints.size() << " == " << pCurrSegInstances.size() - setMatchIDs.size() << std::endl;
+        }
+    }
+
+    void InstanceLinker::LinkNeighBFs(BoxFrame* pNewBF, std::set<int>& setMatchIDs, bool bShow) {
+
+        std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
+        auto pCurrSeg = pNewBF->mapMasks.Get("yoloseg");
+        auto pKF = pNewBF->mpRefKF;
+        auto pCurrSegInstances = pCurrSeg->instance.Get();
+        
+        auto vpNeighBFs = ObjectSystem->GetConnectedBoxFrames(pKF, 10);
+
+        //global
+        int ntest = 0;
+        for (auto pair : pCurrSegInstances) {
+            int sid = pair.first;
+            auto pCurrIns = pair.second;
+
+            bool bMatch = false;
+
+            if (setMatchIDs.count(sid))
+                continue;
+            for (auto pPrevBF : vpNeighBFs) {
+                if (!pPrevBF->mapMasks.Count("yoloseg"))
+                    continue;
+                auto pPrevSeg = pPrevBF->mapMasks.Get("yoloseg");
+                auto pPrevInstances = pPrevSeg->instance.Get();
+
+                for (auto pair : pPrevInstances)
+                {
+                    if (pair.first == 0)
+                        continue;
+                    auto pPrevIns = pair.second;
+                    float val = InstanceSim::ComputeSimFromMP(pCurrIns, pPrevIns);
+                    //std::cout << "tes = " << val << std::endl;
+                    if (val > 0.5)
+                    {
+                        bMatch = true;
+                        if (bMatch)
+                            break;
+                    }
+                }
+                if (bMatch)
+                    break;
+            }
+            if (bMatch){
+                ntest++;
+                setMatchIDs.insert(sid);
+                break;
+            }
+        }
+
+        if (bShow)
+        {
+            std::chrono::high_resolution_clock::time_point t_end = std::chrono::high_resolution_clock::now();
+            auto du_seg = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+
+            std::cout << "test ~~~~~~~~~~~~~~~ ==  " << du_seg <<", "<<ntest << "  ==  " << pCurrSegInstances.size() - setMatchIDs.size() << std::endl;
+        }
+        
     }
 
     void InstanceLinker::computeSim(BoxFrame* prev, BoxFrame* curr, const std::vector<std::pair<int, int>>& vecPairMatches, float iou_threshold) {
@@ -265,7 +488,7 @@ namespace ObjectSLAM {
                     }
                     if (val > iou_threshold && !bMerge && plabel != clabel) {
                         std::cout << "case test = " << prevIns->mStrLabel << " " << currIns->mStrLabel << " == " << val << std::endl;
-                    }
+                    } 
                 }
 
                 /*if (bPrevTable && bCurrTable)

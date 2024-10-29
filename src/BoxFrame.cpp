@@ -5,14 +5,204 @@
 #include <Frame.h>
 #include <MapPoint.h>
 
+#include <ObjectSLAM.h>
+
 #include <SemanticLabel.h>
 #include <Utils_Geometry.h>
 
 namespace ObjectSLAM {
 
 	std::atomic<long unsigned int> GlobalInstance::mnNextGIId = 0;
+	ObjectSLAM* BoxFrame::ObjSystem = nullptr;
 
 	GlobalInstance::GlobalInstance():mnId(++mnNextGIId){
+	}
+
+	void GlobalInstance::AddMapPoints(std::set<EdgeSLAM::MapPoint*> spMPs) {
+		
+		int n = this->AllMapPoints.Size();
+		for (auto pMP : spMPs)
+		{
+			if (!pMP || pMP->isBad())
+				continue;
+			if (this->AllMapPoints.Count(pMP))
+			{
+				continue;
+			}
+			this->AllMapPoints.Update(pMP);
+		}
+		//std::cout << this->mnId << " add mp = " << this->AllMapPoints.Size() <<" || "<<n << std::endl;
+	}
+
+	cv::Point2f GlobalInstance::ProjectPoint(const cv::Mat T, const cv::Mat& K) {
+		cv::Mat apos;
+		{
+			std::unique_lock<std::mutex> lock(mMutexPos);
+			apos = pos.clone();
+		}
+		cv::Mat R = T.rowRange(0, 3).colRange(0, 3);
+		cv::Mat t = T.rowRange(0, 3).col(3);
+		cv::Mat proj = K*(R* apos + t);
+		float d = proj.at<float>(2);  
+
+		auto pt = cv::Point2f(-1, -1);
+		if (d > 0) {
+			pt.x = proj.at<float>(0) / d;
+			pt.y = proj.at<float>(1) / d;
+		}
+		return pt;
+	}
+	cv::Mat GlobalInstance::GetPosition() {
+		std::unique_lock<std::mutex> lock(mMutexPos); 
+		return pos.clone();
+	}
+	void GlobalInstance::UpdatePosition() {
+		auto vpMPs = AllMapPoints.ConvertVector();
+		int n = 0;
+		cv::Mat avgPos = cv::Mat::zeros(3, 1, CV_32FC1);
+
+		for (auto pMP : vpMPs) {
+			if (!pMP || pMP->isBad())
+				continue;
+
+			avgPos += pMP->GetWorldPos();
+			n++;
+		}
+
+		if (n == 0)
+			n++;
+		avgPos /= n;
+
+		{
+			std::unique_lock<std::mutex> lock(mMutexPos);
+			pos = avgPos.clone();
+		}
+	}
+	void GlobalInstance::CalculateBoundingBox() {
+		auto vpMPs = AllMapPoints.ConvertVector();
+		int n = 0;
+		cv::Mat avgPos = cv::Mat::zeros(3, 1, CV_32FC1);
+		cv::Mat pointMat(0, 3, CV_32F);
+		
+		//std::cout <<this->mnId<< " == compute bb = " <<" "<<this->mapConnected.Size()<<" " << AllMapPoints.Size() << " " << vpMPs.size() << " " << n << std::endl;
+		
+		for (auto pMP : vpMPs) {
+			if (!pMP || pMP->isBad())
+				continue;
+
+			const cv::Mat X3d = pMP->GetWorldPos();
+			avgPos += X3d;
+			pointMat.push_back(X3d.t());
+			n++;
+		}
+		
+		//바운딩 박스 계산하면서 평균 위치 계산
+		if (n == 0)
+		{
+			n++;
+			avgPos /= n;
+			std::unique_lock<std::mutex> lock(mMutexPos);
+			pos = avgPos.clone();
+			return;
+		}
+
+		cv::PCA pca(pointMat, cv::Mat(), cv::PCA::DATA_AS_ROW);
+		//std::cout << "OBB::2" << std::endl;
+		
+		// Get the principal components
+		cv::Mat eigenVectors = pca.eigenvectors;
+		cv::Mat eigenValues = pca.eigenvalues;
+
+		// Ensure right-handed coordinate system
+		if (cv::determinant(eigenVectors) < 0) {
+			eigenVectors.row(2) = -eigenVectors.row(2);
+		}
+		//std::cout << "OBB::3" << std::endl;
+		
+		// Transform points to the principal component space
+		cv::Mat transformedPoints = (pointMat - cv::repeat(pca.mean, pointMat.rows, 1)) * eigenVectors.t();
+		// Compute min and max in the transformed space
+		cv::Point3d minCoords, maxCoords;
+		
+		for (int i = 0; i < 3; ++i) {
+			cv::minMaxLoc(transformedPoints.col(i), &minCoords.x + i, &maxCoords.x + i);
+		}
+		//std::cout << "OBB::4" << std::endl;
+		// Compute OBB properties
+		//center = cv::Point3f(pca.mean);
+
+		std::vector<cv::Point3f> acorners = {
+			cv::Point3f(minCoords.x, minCoords.y, minCoords.z),
+			cv::Point3f(maxCoords.x, minCoords.y, minCoords.z),
+			cv::Point3f(maxCoords.x, maxCoords.y, minCoords.z),
+			cv::Point3f(minCoords.x, maxCoords.y, minCoords.z),
+			cv::Point3f(minCoords.x, minCoords.y, maxCoords.z),
+			cv::Point3f(maxCoords.x, minCoords.y, maxCoords.z),
+			cv::Point3f(maxCoords.x, maxCoords.y, maxCoords.z),
+			cv::Point3f(minCoords.x, maxCoords.y, maxCoords.z)
+		};
+
+		//Update bounding box corners
+		{
+			std::unique_lock<std::mutex> lock(mMutexBB);
+			pos = pca.mean;
+			vecCorners.clear();
+			for (const auto& corner : acorners) {
+				cv::Mat cornerMat = (cv::Mat_<float>(1, 3) << corner.x, corner.y, corner.z);
+				cv::Mat transformedCorner = cornerMat * eigenVectors + pca.mean;
+				vecCorners.push_back(cv::Point3f(transformedCorner));
+			}
+			//std::cout << "OBB::5 ==" << vecCorners.size() << std::endl;
+		}
+	}
+	void GlobalInstance::ProjectBB(std::vector<cv::Point2f>& vecProjPoints, const cv::Mat& K, const cv::Mat& T) {
+		cv::Mat R = T(cv::Rect(0, 0, 3, 3));
+		cv::Mat t = T(cv::Rect(3, 0, 1, 3));
+		//std::cout << "OBB::proj::1" << std::endl;
+
+		std::vector<cv::Point3f> corners;
+		{
+			std::unique_lock<std::mutex> lock(mMutexBB);
+			corners = vecCorners;
+		}
+		
+		//실제 이용은 cv::Mat임.
+		// Convert OBB corners to cv::Mat
+		for (size_t i = 0; i < corners.size(); ++i) {
+			cv::Mat point(corners[i]);
+			cv::Mat tmp = K * (R * point + t);
+			float d = tmp.at<float>(2);
+			auto pt = cv::Point2f(tmp.at<float>(0) / d, tmp.at<float>(1) / d);
+			vecProjPoints.push_back(pt);
+			//std::cout << pt << std::endl;
+		}
+		
+		//std::cout << "OBB::proj::2" << std::endl;
+		//// Project 3D points to 2D image plane
+		//cv::projectPoints(objectPoints, R, t, K, D, imagePoints);
+		//std::cout << "OBB::proj::3" << std::endl;
+	}
+	void GlobalInstance::DrawBB(cv::Mat& image, const std::vector<cv::Point2f>& projectedCorners) {
+		std::vector<std::vector<int>> connections = {
+		{0, 1}, {1, 2}, {2, 3}, {3, 0}, // Bottom face
+		{4, 5}, {5, 6}, {6, 7}, {7, 4}, // Top face
+		{0, 4}, {1, 5}, {2, 6}, {3, 7}  // Connecting edges
+		};
+
+		// Draw the edges
+		if (projectedCorners.size() != 8){
+			return;
+		}
+		
+		for (const auto& connection : connections) {
+			cv::line(image, projectedCorners[connection[0]], projectedCorners[connection[1]],
+				cv::Scalar(255, 255, 0), 2);
+		}
+
+		// Draw the corners
+		for (const auto& corner : projectedCorners) {
+			cv::circle(image, corner, 3, cv::Scalar(0, 0, 255), -1);
+		}
 	}
 
 	BoxFrame::BoxFrame(int _id) :BaseSLAM::AbstractFrame(_id), mbInitialized(false), mpPrevBF(nullptr), mbYolo(false), mbDetectron2(false), mbSam2(false)
@@ -28,6 +218,34 @@ namespace ObjectSLAM {
 		labeled.release();
 		depth.release();
 	}
+
+	void BoxFrame::GetNeighGlobalInstnace(std::set<GlobalInstance*>& setGlobalIns) {
+		auto pCurrSeg = this->mapMasks.Get("yoloseg");
+		auto pKF = this->mpRefKF;
+
+		auto pCurrSegInstances = pCurrSeg->instance.Get();
+		auto vpNeighBFs = ObjSystem->GetConnectedBoxFrames(pKF, 10);
+		
+		for (auto pBF : vpNeighBFs) {
+
+			if (pBF->mapMasks.Count("yoloseg"))
+			{
+				auto mapInstances = pBF->mapMasks.Get("yoloseg")->instance.Get();
+				for (auto pair : mapInstances)
+				{
+					auto id = pair.first;
+					auto pIns = pair.second;
+					if (pIns->mpGlobal)
+					{
+						auto pGlobal = pIns->mpGlobal;
+						if (!setGlobalIns.count(pGlobal))
+							setGlobalIns.insert(pGlobal);
+					}
+				}
+			}
+		}
+	}
+
 	void BoxFrame:: UpdateInstanceKeyPoints(const std::vector<std::pair<cv::Point2f, cv::Point2f>>& vecPairPoints, const std::vector<std::pair<int, int>>& vecMatches, std::map < std::pair<int, int>, std::pair<int, int>>& mapChangedIns) {
 		std::map<int, std::vector<cv::Point2f>> mapPoints;
 
@@ -253,7 +471,7 @@ namespace ObjectSLAM {
 				//currIns 획득
 				//prev 생성
 				currIns = pTarget->mmpBBs[oldpair.second];
-				prevIns = new ObjectSLAM::SegInstance(this, pPrevKF->fx, pPrevKF->fy, pPrevKF->cx, pPrevKF->cy, currIns->mpConfLabel->label, currIns->mpConfLabel->maxConf, currIns->mbIsthing, this->mpDevice, false);
+				prevIns = new SegInstance(this, pPrevKF->fx, pPrevKF->fy, pPrevKF->cx, pPrevKF->cy, currIns->mpConfLabel->label, currIns->mpConfLabel->maxConf, currIns->mbIsthing, this->mpDevice, false);
 				prevIns->SetPose(GetPose());
 				prevIns->mStrLabel = currIns->mStrLabel;
 				mmpBBs[newpair.first] = prevIns;
@@ -267,7 +485,7 @@ namespace ObjectSLAM {
 				//prev 획득
 				//curr 생성
 				prevIns = mmpBBs[oldpair.first];
-				currIns = new ObjectSLAM::SegInstance(pTarget, pCurrKF->fx, pCurrKF->fy, pCurrKF->cx, pCurrKF->cy, prevIns->mpConfLabel->label, prevIns->mpConfLabel->maxConf, prevIns->mbIsthing, pTarget->mpDevice, false);
+				currIns = new SegInstance(pTarget, pCurrKF->fx, pCurrKF->fy, pCurrKF->cx, pCurrKF->cy, prevIns->mpConfLabel->label, prevIns->mpConfLabel->maxConf, prevIns->mbIsthing, pTarget->mpDevice, false);
 				currIns->SetPose(pTarget->GetPose());
 				currIns->mStrLabel = prevIns->mStrLabel;
 				pTarget->mmpBBs[newpair.second] = currIns;
@@ -293,8 +511,8 @@ namespace ObjectSLAM {
 			auto pid = pair.first;
 			auto cid = pair.second;
 
-			ObjectSLAM::SegInstance* prevIns = nullptr; 
-			ObjectSLAM::SegInstance* currIns = nullptr;
+			SegInstance* prevIns = nullptr; 
+			SegInstance* currIns = nullptr;
 			if (!mmpBBs.count(pid))
 			{
 			}

@@ -8,6 +8,8 @@
 #include <ConcurrentMap.h>
 #include <ConcurrentVector.h>
 
+#include <ObjectSLAM.h>
+
 #include <ObjectSLAMTypes.h>
 #include <HungarianMatcher.h>
 
@@ -22,8 +24,14 @@ namespace ObjectSLAM {
     class BoxFrame;
     class Instance;
 
+    class ObjectSLAM;
+
     class InstanceSim {
     public:
+        static void FindOverlapMP(Instance* a, Instance* b, std::set<EdgeSLAM::MapPoint*>& setMPs);
+        static void FindOverlapMP(Instance* a, EdgeSLAM::Frame* pF, std::set<EdgeSLAM::MapPoint*>& setMPs);    
+        static void FindOverlapMP(Instance* a, EdgeSLAM::KeyFrame* pKF, std::set<EdgeSLAM::MapPoint*>& setMPs);
+
         static float ComputeSimFromMP(Instance* a, Instance* b);
         static float ComputeSimFromPartialMP(Instance* a, Instance* b);
         static float ComputeSimFromPartialMP(Instance* a, EdgeSLAM::Frame* b);
@@ -36,6 +44,13 @@ namespace ObjectSLAM {
         InstanceLinker(){}
         virtual ~InstanceLinker(){}
     public:
+
+        static ObjectSLAM* ObjectSystem;
+        static void SetSystem(ObjectSLAM* p);
+
+        static void FindInstances(BoxFrame* curr, BoxFrame* prev, std::set<int>& setMatchIDs, std::vector<cv::Point2f>& vecPoints, bool bShow = false);
+
+        static void LinkNeighBFs(BoxFrame* curr, std::set<int>& setMatchIDs, bool bShow = false);
 
         //현재 프레임과 이전 프레임에 대해서 매칭함.
         static void computeSim(BoxFrame* prev, BoxFrame* curr, const std::vector<std::pair<int, int>>& vecPairMatches, float iou_threshold = 0.5);

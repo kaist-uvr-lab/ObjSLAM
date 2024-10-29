@@ -5,6 +5,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
 
+#include <ConcurrentSet.h>
 #include <ConcurrentMap.h>
 #include <ConcurrentVector.h>
 
@@ -22,7 +23,7 @@ namespace EdgeSLAM {
 } 
 
 namespace ObjectSLAM {
-	//class ObjectSLAM;
+	class ObjectSLAM;
 	class BoundingBox;
 	class BoxFrame;
 	class SegInstance;
@@ -50,26 +51,81 @@ namespace ObjectSLAM {
 
 		}
 	public:
+		void Merge(GlobalInstance* pG);
 		void Connect(BoxFrame* pBF, int id) {
 			mapConnected.Update(pBF, id);
 		}
+
+		void AddMapPoints(std::set<EdgeSLAM::MapPoint*> spMPs);
+
+	////Position
+	public:
+		cv::Point2f ProjectPoint(const cv::Mat T, const cv::Mat& K);
+		cv::Mat GetPosition();
+		void UpdatePosition();
+	private:
+		std::mutex mMutexPos;
+		cv::Mat pos;
+	////Position
+	////3D Bounding Box
+	public:
+		void CalculateBoundingBox();
+		void ProjectBB(std::vector<cv::Point2f>& vecProjPoints, const cv::Mat& K, const cv::Mat& T);
+		void DrawBB(cv::Mat& image, const std::vector<cv::Point2f>& projectedCorners);
+	private:
+		std::mutex mMutexBB;
+		std::vector<cv::Point3f> vecCorners;
+
+
+	////3D Bounding Box
 	public:
 		int mnId;
+
+		ConcurrentSet<EdgeSLAM::MapPoint*> AllMapPoints;
 		ConcurrentMap<BoxFrame*, int> mapConnected;
 		static std::atomic<long unsigned int> mnNextGIId;
 	};
 
 	class Instance {
 	public:
-		Instance() : mpGlobal(nullptr), area(0.0){}
+		Instance() : area(0.0){}
 		virtual ~Instance(){}
 	public:
-		GlobalInstance* mpGlobal;
+		//GlobalInstance* mpGlobal;
+		std::set<EdgeSLAM::MapPoint*> setMPs;
+		std::set<int> setKPs;
+
+		std::vector<cv::Point> contour;
 		cv::Mat mask;
 		cv::Rect rect;
+		cv::RotatedRect rrect;//elliipse and rotated rect;
 		cv::Point2f pt;
 		float area;
-		std::set<EdgeSLAM::MapPoint*> setMPs;
+	};
+
+	class AssoMatchRes {
+	public:
+		AssoMatchRes() :id(-1), res(false), req(false), iou(0.0) {}
+		std::string print(Instance* p, int _id)
+		{
+			std::stringstream ss;
+			ss << _id << ", " << id << ", " << res << ", " << req << ", " << iou;
+			if(p->mpGlobal)
+			{ 
+				ss << ", " << p->mpGlobal->mnId;
+			}
+			return ss.str();
+		}
+		std::string print(int _id) {
+			std::stringstream ss;
+			ss << _id << ", " << id << ", " << res << ", " << req << ", " << iou;
+			return ss.str();
+		}
+	public:
+		int id;
+		bool res;
+		bool req; //sam
+		float iou;
 	};
 
 	class InstanceMask {
@@ -78,7 +134,9 @@ namespace ObjectSLAM {
 		virtual ~InstanceMask() {}
 	public:
 		cv::Mat mask;
-		ConcurrentMap<int, Instance*> instance;
+		ConcurrentMap<int, Instance*> FrameInstances;
+		ConcurrentMap<int, GlobalInstance*> MapInstances;
+
 		std::map<int, cv::Rect> rect;
 		std::map<int, std::pair<int, float>> info;
 		std::atomic<bool> bInit, bRequest;
@@ -86,6 +144,7 @@ namespace ObjectSLAM {
 		std::vector<cv::Point2f> vecObjectPoints;
 		std::atomic<int> mnMaxId;
 		std::atomic<int> id1, id2; //id1 : target, id2 : reference
+		std::map<int, AssoMatchRes*> mapResAsso;
 	private:
 	};
 
@@ -109,6 +168,7 @@ namespace ObjectSLAM {
 			//mUsed.at<uchar>(kp.pt)++;
 		}
 		
+		void GetNeighGlobalInstnace(std::set<GlobalInstance*>& setGlobalIns);
 		void Copy(EdgeSLAM::Frame* pF);
 
 		void ConvertInstanceToFrame(std::vector<std::pair<int, int>>& vPairFrameAndBox, std::vector<cv::Point2f>& vecCorners);
@@ -158,13 +218,12 @@ namespace ObjectSLAM {
 		}
 
 	public:
+		static ObjectSLAM* ObjSystem;
 		BaseSLAM::BaseDevice* mpDevice;
 		EdgeSLAM::KeyFrame* mpRefKF;
 		BoxFrame* mpPrevBF;
 
-
 		ConcurrentMap<std::string, InstanceMask*> mapMasks;
-
 
 		//yolo
 		std::vector<BoundingBox*> mvpBBs;
