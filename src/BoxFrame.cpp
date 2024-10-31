@@ -18,6 +18,46 @@ namespace ObjectSLAM {
 	GlobalInstance::GlobalInstance():mnId(++mnNextGIId){
 	}
 
+	void GlobalInstance::Merge(GlobalInstance* pG) {
+		if (this->mnId == pG->mnId)
+			return;
+		GlobalInstance* pG1, *pG2;
+		if (pG->mapConnected.Size() > this->mapConnected.Size())
+		{
+			pG1 = pG;
+			pG2 = this;
+		}
+		else {
+			pG1 = this;
+			pG2 = pG;
+		}
+
+		auto mapConnected = pG2->mapConnected.Get();
+		for (auto pair : mapConnected)
+		{
+			auto pBF = pair.first;
+			auto idx = pair.second;
+			if (!pBF->mapMasks.Count("yoloseg"))
+				continue;
+			if (pG1->mapConnected.Count(pBF))
+			{
+				std::cout << "global instance merge :: error????" << std::endl;
+			}
+			pBF->mapMasks.Get("yoloseg")->MapInstances.Update(idx, pG1);
+			pG1->mapConnected.Update(pBF, idx);
+		}
+
+		auto spMPs = pG2->AllMapPoints.Get();
+		for (auto pMP : spMPs)
+		{
+			if (!pMP || pMP->isBad())
+				continue;
+			if (pG1->AllMapPoints.Count(pMP))
+				continue;
+			pG1->AllMapPoints.Update(pMP);
+		}
+	}
+
 	void GlobalInstance::AddMapPoints(std::set<EdgeSLAM::MapPoint*> spMPs) {
 		
 		int n = this->AllMapPoints.Size();
@@ -33,7 +73,7 @@ namespace ObjectSLAM {
 		}
 		//std::cout << this->mnId << " add mp = " << this->AllMapPoints.Size() <<" || "<<n << std::endl;
 	}
-
+	  
 	cv::Point2f GlobalInstance::ProjectPoint(const cv::Mat T, const cv::Mat& K) {
 		cv::Mat apos;
 		{
@@ -223,24 +263,21 @@ namespace ObjectSLAM {
 		auto pCurrSeg = this->mapMasks.Get("yoloseg");
 		auto pKF = this->mpRefKF;
 
-		auto pCurrSegInstances = pCurrSeg->instance.Get();
+		auto pCurrSegInstances = pCurrSeg->FrameInstances.Get();
 		auto vpNeighBFs = ObjSystem->GetConnectedBoxFrames(pKF, 10);
 		
 		for (auto pBF : vpNeighBFs) {
 
 			if (pBF->mapMasks.Count("yoloseg"))
 			{
-				auto mapInstances = pBF->mapMasks.Get("yoloseg")->instance.Get();
-				for (auto pair : mapInstances)
-				{
-					auto id = pair.first;
-					auto pIns = pair.second;
-					if (pIns->mpGlobal)
-					{
-						auto pGlobal = pIns->mpGlobal;
-						if (!setGlobalIns.count(pGlobal))
-							setGlobalIns.insert(pGlobal);
+				auto mapGlobals = pBF->mapMasks.Get("yoloseg")->MapInstances.Get();
+				for (auto pair : mapGlobals) {
+					auto pG = pair.second;
+					if (!pG) {
+						continue;
 					}
+					if (!setGlobalIns.count(pG))
+						setGlobalIns.insert(pG);
 				}
 			}
 		}

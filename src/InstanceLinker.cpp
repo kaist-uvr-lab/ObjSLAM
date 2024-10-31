@@ -126,7 +126,7 @@ namespace ObjectSLAM {
         std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
         auto pCurrSeg = pNewBF->mapMasks.Get("yoloseg");
         auto pKF = pNewBF->mpRefKF;
-        auto pCurrSegInstances = pCurrSeg->instance.Get();
+        auto pCurrSegInstances = pCurrSeg->FrameInstances.Get();
         auto vpNeighBFs = ObjectSystem->GetConnectedBoxFrames(pKF, 10);
         auto vpNeighKFs = pKF->GetBestCovisibilityKeyFrames(10);
 
@@ -146,17 +146,15 @@ namespace ObjectSLAM {
             if (pBF->mapMasks.Count("yoloseg"))
             {
                 spNeighBFs.insert(pBF);
-                auto mapIns = pBF->mapMasks.Get("yoloseg")->instance.Get();
-                for (auto pair : mapIns)
+
+                auto mapGlobals = pBF->mapMasks.Get("yoloseg")->MapInstances.Get();
+                for (auto pair : mapGlobals)
                 {
-                    auto id = pair.first;
-                    auto pIns = pair.second;
-                    if (pIns->mpGlobal)
-                    {
-                        auto pGlobal = pIns->mpGlobal;
-                        if (!spNeighGlobalIns.count(pGlobal) && !setMatchIDs.count(pGlobal->mnId))
-                            spNeighGlobalIns.insert(pGlobal);
-                    }
+                    auto pG = pair.second;
+                    if (!pG)
+                        continue;
+                    if (!spNeighGlobalIns.count(pG) && !setMatchIDs.count(pG->mnId))
+                        spNeighGlobalIns.insert(pG);
                 }
             }
         }
@@ -195,7 +193,7 @@ namespace ObjectSLAM {
             if (!apPrevBF->mapMasks.Count("yoloseg"))
                 continue;
             auto pPrevSeg = apPrevBF->mapMasks.Get("yoloseg");
-            auto pPrevInstances = pPrevSeg->instance.Get();
+            auto pPrevInstances = pPrevSeg->FrameInstances.Get();
 
             for (auto pair : pPrevInstances)
             {
@@ -229,7 +227,8 @@ namespace ObjectSLAM {
                         vecPoints.push_back(avgPt);
                     }
                     
-                    auto pG = pPrevIns->mpGlobal;
+                    auto pG = pPrevSeg->MapInstances.Get(pair.first);
+                    //auto pG = pPrevIns->mpGlobal;
                     if (pG && pG->mapConnected.Count(pNewBF)) {
                         int idx = pG->mapConnected.Get(pNewBF);
                         if (!setMatchIDs.count(idx))
@@ -256,7 +255,7 @@ namespace ObjectSLAM {
         std::chrono::high_resolution_clock::time_point t_start = std::chrono::high_resolution_clock::now();
         auto pCurrSeg = pNewBF->mapMasks.Get("yoloseg");
         auto pKF = pNewBF->mpRefKF;
-        auto pCurrSegInstances = pCurrSeg->instance.Get();
+        auto pCurrSegInstances = pCurrSeg->FrameInstances.Get();
         
         auto vpNeighBFs = ObjectSystem->GetConnectedBoxFrames(pKF, 10);
 
@@ -274,7 +273,7 @@ namespace ObjectSLAM {
                 if (!pPrevBF->mapMasks.Count("yoloseg"))
                     continue;
                 auto pPrevSeg = pPrevBF->mapMasks.Get("yoloseg");
-                auto pPrevInstances = pPrevSeg->instance.Get();
+                auto pPrevInstances = pPrevSeg->FrameInstances.Get();
 
                 for (auto pair : pPrevInstances)
                 {

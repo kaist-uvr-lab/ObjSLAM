@@ -106,13 +106,13 @@ namespace ObjectSLAM {
 	class AssoMatchRes {
 	public:
 		AssoMatchRes() :id(-1), res(false), req(false), iou(0.0) {}
-		std::string print(Instance* p, int _id)
+		std::string print(int fid, int gid)
 		{
 			std::stringstream ss;
-			ss << _id << ", " << id << ", " << res << ", " << req << ", " << iou;
-			if(p->mpGlobal)
+			ss << fid << ", " << id << ", " << res << ", " << req << ", " << iou;
+			if(gid > 0)
 			{ 
-				ss << ", " << p->mpGlobal->mnId;
+				ss << ", " << gid;
 			}
 			return ss.str();
 		}

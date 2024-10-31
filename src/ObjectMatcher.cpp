@@ -16,7 +16,7 @@ namespace ObjectSLAM {
 		std::vector<cv::Point2f> corners;
 		//cv::goodFeaturesToTrack(gray2, pMatches->vecReferenceCorners, 1000, 0.01, 10, pSeg->mask);
 		
-		auto pSegIns = pSeg->instance.Get();
+		auto pSegIns = pSeg->FrameInstances.Get();
 		for (auto pair : pSegIns)
 		{
 			pMatches->vecReferenceCorners.push_back(pair.second->pt);
