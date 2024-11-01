@@ -60,9 +60,11 @@ namespace ObjectSLAM {
 
 	////Position
 	public:
+		void Update(std::vector<cv::Mat>& mat, float val = 1.285);
 		cv::Point2f ProjectPoint(const cv::Mat T, const cv::Mat& K);
 		cv::Mat GetPosition();
 		void UpdatePosition();
+		//void UpdatePosition(std::vector<)
 	private:
 		std::mutex mMutexPos;
 		cv::Mat pos;

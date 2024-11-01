@@ -23,11 +23,14 @@ namespace ObjectSLAM {
 	class SegInstance;
     class BoxFrame;
     class Instance;
-
+    class GlobalInstance;
     class ObjectSLAM;
 
     class InstanceSim {
     public:
+
+        static bool CheckStaticObject(const std::vector<cv::Point>& contour, std::map<int, Instance*>& mapInstances, int th = 3);
+
         static void FindOverlapMP(Instance* a, Instance* b, std::set<EdgeSLAM::MapPoint*>& setMPs);
         static void FindOverlapMP(Instance* a, EdgeSLAM::Frame* pF, std::set<EdgeSLAM::MapPoint*>& setMPs);    
         static void FindOverlapMP(Instance* a, EdgeSLAM::KeyFrame* pKF, std::set<EdgeSLAM::MapPoint*>& setMPs);
@@ -37,6 +40,11 @@ namespace ObjectSLAM {
         static float ComputeSimFromPartialMP(Instance* a, EdgeSLAM::Frame* b);
         static float ComputeSimFromPartialMP(Instance* a, EdgeSLAM::KeyFrame* b);
         static float ComputeSimFromIOU(Instance* a, Instance* b);
+        static float ComputeSimFromIOU(const cv::Mat& mask1, const cv::Mat& mask2);
+
+
+        static bool ComputSim(const std::vector<cv::Point>& contours, const std::vector<cv::Point2f>& pts, float th = 0.5);
+        
     };
 
     class InstanceLinker {

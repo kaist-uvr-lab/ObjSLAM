@@ -14,6 +14,38 @@ namespace ObjectSLAM {
 
     ObjectSLAM* InstanceLinker::ObjectSystem = nullptr;
 
+    bool InstanceSim::CheckStaticObject(const std::vector<cv::Point>& contour, std::map<int, Instance*>& mapInstances, int th) {
+
+        float n = mapInstances.size();
+        if (n == 0)
+            return false;
+        float c = 0;
+        for (auto pair : mapInstances)
+        {
+            if (pair.first == 0)
+                continue;
+            auto pt = pair.second->pt;
+            if (cv::pointPolygonTest(contour, pt, false) < 0.0)
+                continue;
+            c++;
+        }
+        return c >= th;
+    }
+
+    bool InstanceSim::ComputSim(const std::vector<cv::Point>& contour, const std::vector<cv::Point2f>& pts, float th) {
+        float n = pts.size();
+        if (n == 0)
+            return false;
+        float c = 0;
+        for (auto pt : pts)
+        {
+            if (cv::pointPolygonTest(contour, pt, false) < 0.0)
+                continue;
+            c++;
+        }
+        return (c / n) >= th;
+    }
+
     void InstanceSim::FindOverlapMP(Instance* a, Instance* b, std::set<EdgeSLAM::MapPoint*>& setMPs){
         for (auto mp1 : a->setMPs)
         {
@@ -116,6 +148,16 @@ namespace ObjectSLAM {
             res = 0.0;
         //std::cout << "sim test = " << res <<" "<<nC << std::endl;
         return res;
+    }
+
+    float InstanceSim::ComputeSimFromIOU(const cv::Mat& mask1, const cv::Mat& mask2) {
+        cv::Mat overlap = mask1 & mask2;
+        cv::Mat total = mask1 | mask2;
+        float nOverlap = (float)cv::countNonZero(overlap);
+        float nUnion = (float)cv::countNonZero(total);
+        if (nUnion == 0)
+            nUnion++;
+        return nOverlap / nUnion;
     }
 
     void InstanceLinker::SetSystem(ObjectSLAM* p) {

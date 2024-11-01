@@ -12,6 +12,13 @@
 
 namespace ObjectSLAM {
 
+	bool isInRange(float val, float _min, float _max)
+	{
+		if (val > _min && val < _max)
+			return true;
+		return false;
+	}
+
 	std::atomic<long unsigned int> GlobalInstance::mnNextGIId = 0;
 	ObjectSLAM* BoxFrame::ObjSystem = nullptr;
 
@@ -92,6 +99,83 @@ namespace ObjectSLAM {
 		}
 		return pt;
 	}
+
+	//중점과 범위 내의 포인트 빼내기
+	void GlobalInstance::Update(std::vector<cv::Mat>& mat, float val) {
+		auto vpMPs = AllMapPoints.ConvertVector();
+		int n = 0;
+		cv::Mat pointMat(0, 3, CV_32F);
+
+		//cv::Mat AAA = cv::Mat::ones(3, 1, CV_32FC1)*10000;
+
+		for (auto pMP : vpMPs) {
+			if (!pMP || pMP->isBad())
+				continue;
+
+			const cv::Mat X3d = pMP->GetWorldPos();
+			pointMat.push_back(X3d.t());
+			n++;
+		}
+
+		//바운딩 박스 계산하면서 평균 위치 계산
+		if (n == 0)
+		{
+			n++;
+			std::unique_lock<std::mutex> lock(mMutexPos);
+			pos = cv::Mat::zeros(3,1, CV_32FC1);
+			return;
+		}
+
+		cv::PCA pca(pointMat, cv::Mat(), cv::PCA::DATA_AS_ROW);
+		
+		cv::Mat eigenVectors = pca.eigenvectors;
+		cv::Mat eigenValues = pca.eigenvalues;
+
+		if (cv::determinant(eigenVectors) < 0) {
+			eigenVectors.row(2) = -eigenVectors.row(2);
+		}
+
+		// Transform points to the principal component space
+		cv::Mat transformedPoints = (pointMat - cv::repeat(pca.mean, pointMat.rows, 1)) * eigenVectors.t();
+		// Compute min and max in the transformed space
+		cv::Point3d minCoords, maxCoords;
+
+		//xyz 평균으로 계산하기
+		cv::Scalar mean1, stddev1;
+		cv::Scalar mean2, stddev2;
+		cv::Scalar mean3, stddev3;
+		cv::Mat absTransformed = cv::abs(transformedPoints);
+		cv::meanStdDev(absTransformed.col(0), mean1, stddev1);
+		cv::meanStdDev(absTransformed.col(1), mean2, stddev2);
+		cv::meanStdDev(absTransformed.col(2), mean3, stddev3);
+
+		maxCoords.x = mean1.val[0] + val * stddev1.val[0];
+		maxCoords.y = mean2.val[0] + val * stddev2.val[0];
+		maxCoords.z = mean3.val[0] + val * stddev3.val[0];
+
+		std::cout << eigenVectors << std::endl;
+		std::cout << eigenValues << std::endl;
+		std::cout << "dev = " << stddev1.val[0] << " " << stddev2.val[0] << " " << stddev3.val[0] << std::endl;
+
+		{
+			for (int i = 0; i < transformedPoints.rows; i++) {
+				cv::Mat temp = transformedPoints.row(i);
+				if (!isInRange(temp.at<float>(0), -maxCoords.x, maxCoords.x))
+					continue;
+				if (!isInRange(temp.at<float>(1), -maxCoords.y, maxCoords.y))
+					continue;
+				if (!isInRange(temp.at<float>(2), -maxCoords.z, maxCoords.z))
+					continue;
+				cv::Mat transformedCorner = temp * eigenVectors + pca.mean;	//1x3
+				mat.push_back(transformedCorner.t());
+			}
+		}
+		{
+			std::unique_lock<std::mutex> lock(mMutexPos);
+			pos = pca.mean.t();
+		}
+	}
+
 	cv::Mat GlobalInstance::GetPosition() {
 		std::unique_lock<std::mutex> lock(mMutexPos); 
 		return pos.clone();
@@ -152,7 +236,7 @@ namespace ObjectSLAM {
 		// Get the principal components
 		cv::Mat eigenVectors = pca.eigenvectors;
 		cv::Mat eigenValues = pca.eigenvalues;
-
+		
 		// Ensure right-handed coordinate system
 		if (cv::determinant(eigenVectors) < 0) {
 			eigenVectors.row(2) = -eigenVectors.row(2);
@@ -163,10 +247,35 @@ namespace ObjectSLAM {
 		cv::Mat transformedPoints = (pointMat - cv::repeat(pca.mean, pointMat.rows, 1)) * eigenVectors.t();
 		// Compute min and max in the transformed space
 		cv::Point3d minCoords, maxCoords;
+
+		//xyz 평균으로 계산하기
+		cv::Scalar mean1, stddev1;
+		cv::Scalar mean2, stddev2;
+		cv::Scalar mean3, stddev3;
+		cv::Mat absTransformed = cv::abs(transformedPoints);
+		cv::meanStdDev(absTransformed.col(0), mean1, stddev1);
+		cv::meanStdDev(absTransformed.col(1), mean2, stddev2);
+		cv::meanStdDev(absTransformed.col(2), mean3, stddev3);
+
+		float val = 1.285;
+		maxCoords.x = mean1.val[0] + val * stddev1.val[0];
+		maxCoords.y = mean2.val[0] + val * stddev2.val[0];
+		maxCoords.z = mean3.val[0] + val * stddev3.val[0];
 		
-		for (int i = 0; i < 3; ++i) {
-			cv::minMaxLoc(transformedPoints.col(i), &minCoords.x + i, &maxCoords.x + i);
+		/*cv::Point3d avgAxis(0.0, 0.0, 0.0);
+		for (int i = 0; i < transformedPoints.rows; i++) {
+			float x = std::abs(transformedPoints.at<float>(i, 0));
+			float y = std::abs(transformedPoints.at<float>(i, 1));
+			float z = std::abs(transformedPoints.at<float>(i, 2));
+			maxCoords += cv::Point3d(x, y, z);
 		}
+		maxCoords /= n;
+		*/
+		minCoords = -maxCoords;
+
+		/*for (int i = 0; i < 3; ++i) {
+			cv::minMaxLoc(transformedPoints.col(i), &minCoords.x + i, &maxCoords.x + i);
+		}*/
 		//std::cout << "OBB::4" << std::endl;
 		// Compute OBB properties
 		//center = cv::Point3f(pca.mean);
@@ -184,8 +293,11 @@ namespace ObjectSLAM {
 
 		//Update bounding box corners
 		{
+			std::unique_lock<std::mutex> lock(mMutexPos);
+			pos = pca.mean.t();
+		}
+		{
 			std::unique_lock<std::mutex> lock(mMutexBB);
-			pos = pca.mean;
 			vecCorners.clear();
 			for (const auto& corner : acorners) {
 				cv::Mat cornerMat = (cv::Mat_<float>(1, 3) << corner.x, corner.y, corner.z);
@@ -208,14 +320,17 @@ namespace ObjectSLAM {
 		
 		//실제 이용은 cv::Mat임.
 		// Convert OBB corners to cv::Mat
-		for (size_t i = 0; i < corners.size(); ++i) {
-			cv::Mat point(corners[i]);
+		for (auto corner : corners) {
+			cv::Mat point = (cv::Mat_<float>(3,1) << corner.x, corner.y, corner.z);
 			cv::Mat tmp = K * (R * point + t);
 			float d = tmp.at<float>(2);
 			auto pt = cv::Point2f(tmp.at<float>(0) / d, tmp.at<float>(1) / d);
 			vecProjPoints.push_back(pt);
-			//std::cout << pt << std::endl;
 		}
+		//for (size_t i = 0; i < corners.size(); ++i) {
+		//	cv::Mat point(corners[i]);
+		//	//std::cout << pt << std::endl;
+		//}
 		
 		//std::cout << "OBB::proj::2" << std::endl;
 		//// Project 3D points to 2D image plane
