@@ -32,10 +32,12 @@ namespace ObjectSLAM {
         return c >= th;
     }
 
-    bool InstanceSim::ComputSim(const std::vector<cv::Point>& contour, const std::vector<cv::Point2f>& pts, float th) {
+    bool InstanceSim::ComputSim(const std::vector<cv::Point>& contour, const std::vector<cv::Point2f>& pts, float& val, float th) {
         float n = pts.size();
-        if (n == 0)
+        if (n == 0){
+            val = 0.0;
             return false;
+        }
         float c = 0;
         for (auto pt : pts)
         {
@@ -43,7 +45,8 @@ namespace ObjectSLAM {
                 continue;
             c++;
         }
-        return (c / n) >= th;
+        val = c / n;
+        return val >= th;
     }
 
     void InstanceSim::FindOverlapMP(Instance* a, Instance* b, std::set<EdgeSLAM::MapPoint*>& setMPs){

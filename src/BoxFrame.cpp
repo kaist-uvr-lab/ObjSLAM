@@ -22,7 +22,7 @@ namespace ObjectSLAM {
 	std::atomic<long unsigned int> GlobalInstance::mnNextGIId = 0;
 	ObjectSLAM* BoxFrame::ObjSystem = nullptr;
 
-	GlobalInstance::GlobalInstance():mnId(++mnNextGIId){
+	GlobalInstance::GlobalInstance():mnId(++mnNextGIId), mnMatchFail(0){
 	}
 
 	void GlobalInstance::Merge(GlobalInstance* pG) {
@@ -87,6 +87,8 @@ namespace ObjectSLAM {
 			std::unique_lock<std::mutex> lock(mMutexPos);
 			apos = pos.clone();
 		}
+		if (apos.at<float>(0) == 0.0 && apos.at<float>(1) == 0.0 && apos.at<float>(2) == 0.0)
+			return cv::Point2f(-1, -1);
 		cv::Mat R = T.rowRange(0, 3).colRange(0, 3);
 		cv::Mat t = T.rowRange(0, 3).col(3);
 		cv::Mat proj = K*(R* apos + t);
@@ -101,12 +103,11 @@ namespace ObjectSLAM {
 	}
 
 	//중점과 범위 내의 포인트 빼내기
-	void GlobalInstance::Update(std::vector<cv::Mat>& mat, float val) {
+	void GlobalInstance::Update(std::vector<cv::Mat>& mat, ObjectSLAM* ObjSystem, float val) {
+		//ObjSystem->vecObjectAssoRes.push_back("g::update::start");
 		auto vpMPs = AllMapPoints.ConvertVector();
 		int n = 0;
 		cv::Mat pointMat(0, 3, CV_32F);
-
-		//cv::Mat AAA = cv::Mat::ones(3, 1, CV_32FC1)*10000;
 
 		for (auto pMP : vpMPs) {
 			if (!pMP || pMP->isBad())
@@ -120,9 +121,9 @@ namespace ObjectSLAM {
 		//바운딩 박스 계산하면서 평균 위치 계산
 		if (n == 0)
 		{
-			n++;
 			std::unique_lock<std::mutex> lock(mMutexPos);
-			pos = cv::Mat::zeros(3,1, CV_32FC1);
+			pos = cv::Mat::zeros(3, 1, CV_32FC1);
+			//ObjSystem->vecObjectAssoRes.push_back("g::update::end");
 			return;
 		}
 
@@ -130,42 +131,50 @@ namespace ObjectSLAM {
 		
 		cv::Mat eigenVectors = pca.eigenvectors;
 		cv::Mat eigenValues = pca.eigenvalues;
-
-		if (cv::determinant(eigenVectors) < 0) {
-			eigenVectors.row(2) = -eigenVectors.row(2);
+		if (eigenVectors.rows != 3 || eigenVectors.cols != 3)
+		{
+			//ObjSystem->vecObjectAssoRes.push_back("g::update::end");
+			std::unique_lock<std::mutex> lock(mMutexPos);
+			pos = cv::Mat::zeros(3, 1, CV_32FC1);
+			return;
 		}
 
+		bool bDeter = cv::determinant(eigenVectors) < 0;
+		if (bDeter) {
+			eigenVectors.row(2) = -eigenVectors.row(2);
+		}
 		// Transform points to the principal component space
 		cv::Mat transformedPoints = (pointMat - cv::repeat(pca.mean, pointMat.rows, 1)) * eigenVectors.t();
 		// Compute min and max in the transformed space
 		cv::Point3d minCoords, maxCoords;
 
+		//ObjSystem->vecObjectAssoRes.push_back("update::6");
+
 		//xyz 평균으로 계산하기
 		cv::Scalar mean1, stddev1;
 		cv::Scalar mean2, stddev2;
 		cv::Scalar mean3, stddev3;
-		cv::Mat absTransformed = cv::abs(transformedPoints);
+		cv::Mat absTransformed = (transformedPoints); //abs
 		cv::meanStdDev(absTransformed.col(0), mean1, stddev1);
 		cv::meanStdDev(absTransformed.col(1), mean2, stddev2);
 		cv::meanStdDev(absTransformed.col(2), mean3, stddev3);
 
-		maxCoords.x = mean1.val[0] + val * stddev1.val[0];
-		maxCoords.y = mean2.val[0] + val * stddev2.val[0];
-		maxCoords.z = mean3.val[0] + val * stddev3.val[0];
+		//ObjSystem->vecObjectAssoRes.push_back("update::7");
 
-		std::cout << eigenVectors << std::endl;
-		std::cout << eigenValues << std::endl;
-		std::cout << "dev = " << stddev1.val[0] << " " << stddev2.val[0] << " " << stddev3.val[0] << std::endl;
-
+		float maxx = val * stddev1.val[0];
+		float maxy = val * stddev2.val[0];
+		float maxz = val * stddev3.val[0];
 		{
 			for (int i = 0; i < transformedPoints.rows; i++) {
 				cv::Mat temp = transformedPoints.row(i);
-				if (!isInRange(temp.at<float>(0), -maxCoords.x, maxCoords.x))
+				
+				float ux = abs((temp.at<float>(0) - mean1.val[0]));
+				float uy = abs((temp.at<float>(1) - mean2.val[0]));
+				float uz = abs((temp.at<float>(2) - mean3.val[0]));
+
+				if (ux > maxx || uy > maxy || uz > maxz )
 					continue;
-				if (!isInRange(temp.at<float>(1), -maxCoords.y, maxCoords.y))
-					continue;
-				if (!isInRange(temp.at<float>(2), -maxCoords.z, maxCoords.z))
-					continue;
+
 				cv::Mat transformedCorner = temp * eigenVectors + pca.mean;	//1x3
 				mat.push_back(transformedCorner.t());
 			}
@@ -174,6 +183,7 @@ namespace ObjectSLAM {
 			std::unique_lock<std::mutex> lock(mMutexPos);
 			pos = pca.mean.t();
 		}
+		//ObjSystem->vecObjectAssoRes.push_back("g::update::end");
 	}
 
 	cv::Mat GlobalInstance::GetPosition() {
@@ -375,8 +385,13 @@ namespace ObjectSLAM {
 	}
 
 	void BoxFrame::GetNeighGlobalInstnace(std::set<GlobalInstance*>& setGlobalIns) {
+		if (!this->mapMasks.Count("yoloseg"))
+			return;
 		auto pCurrSeg = this->mapMasks.Get("yoloseg");
+		
 		auto pKF = this->mpRefKF;
+		if (!pKF)
+			return;
 
 		auto pCurrSegInstances = pCurrSeg->FrameInstances.Get();
 		auto vpNeighBFs = ObjSystem->GetConnectedBoxFrames(pKF, 10);

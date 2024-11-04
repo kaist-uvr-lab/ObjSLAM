@@ -43,7 +43,7 @@ namespace ObjectSLAM {
         static float ComputeSimFromIOU(const cv::Mat& mask1, const cv::Mat& mask2);
 
 
-        static bool ComputSim(const std::vector<cv::Point>& contours, const std::vector<cv::Point2f>& pts, float th = 0.5);
+        static bool ComputSim(const std::vector<cv::Point>& contours, const std::vector<cv::Point2f>& pts, float& val, float th = 0.5);
         
     };
 

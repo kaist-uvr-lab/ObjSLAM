@@ -77,6 +77,9 @@ namespace ObjectSLAM {
 			return idx;
 		}*/
 		
+		//evaluation
+		ConcurrentVector<float> VecIOU;
+		ConcurrentMap<int, std::string> MapNumObjects;
 
 		//save
 		bool mbSaveLatency;

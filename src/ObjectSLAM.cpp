@@ -12,12 +12,41 @@ namespace ObjectSLAM {
 		std::stringstream ss;
 		ss << "../res/aaresasso/res.csv";
 
+		//file open
 		std::ofstream file;
 		file.open(ss.str(), std::ios::trunc);
+
+		//iou
 		ss.str("");
+		auto vec = VecIOU.get();
+		float avgIOU = 0.0;
+		for (auto val : vec)
+		{
+			avgIOU += val;
+		}
+		avgIOU /= vec.size();
+		{
+			std::stringstream ss;
+			ss << "AVG IOU," << avgIOU << std::endl;
+		}
+		//iou
+
+		//detection
+		auto mapDatas = MapNumObjects.Get();
+		for (auto pair : mapDatas)
+		{
+			auto id = pair.first;
+			auto data = pair.second;
+			ss << data << std::endl;
+		}
+		//detection
+		
+		//log
 		for (auto strres : vecObjectAssoRes) {
 			ss << strres << std::endl;
 		}
+		//log
+		
 		file.write(ss.str().c_str(), ss.str().size());
 		file.close();
 	}

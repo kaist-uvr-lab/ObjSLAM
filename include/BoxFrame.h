@@ -60,7 +60,7 @@ namespace ObjectSLAM {
 
 	////Position
 	public:
-		void Update(std::vector<cv::Mat>& mat, float val = 1.285);
+		void Update(std::vector<cv::Mat>& mat, ObjectSLAM* ObjSystem, float val = 1.285);
 		cv::Point2f ProjectPoint(const cv::Mat T, const cv::Mat& K);
 		cv::Mat GetPosition();
 		void UpdatePosition();
@@ -82,7 +82,7 @@ namespace ObjectSLAM {
 	////3D Bounding Box
 	public:
 		int mnId;
-
+		std::atomic<int> mnMatchFail;
 		ConcurrentSet<EdgeSLAM::MapPoint*> AllMapPoints;
 		ConcurrentMap<BoxFrame*, int> mapConnected;
 		static std::atomic<long unsigned int> mnNextGIId;
