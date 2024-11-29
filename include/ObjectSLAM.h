@@ -84,6 +84,7 @@ namespace ObjectSLAM {
 		//save
 		bool mbSaveLatency;
 		ConcurrentMap<std::string, std::vector<double>> MapLatency;
+		ConcurrentMap<int, long long> MapTimeStampForKF; //<id, time>
 		
 		//save2
 		std::vector<std::string> vecObjectAssoRes;

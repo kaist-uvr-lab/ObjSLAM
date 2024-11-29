@@ -27,6 +27,8 @@ namespace ObjectSLAM {
 	class BoundingBox;
 	class BoxFrame;
 	class SegInstance;
+	class GlobalInstance;
+	class FrameInstance;
 	class NewBoxFrame {
 	public:
 		NewBoxFrame(int w, int h):N(0), mUsed(cv::Mat::zeros(h,w, CV_8UC1)), mDesc(cv::Mat::zeros(0,32,CV_8UC1)){
@@ -44,67 +46,8 @@ namespace ObjectSLAM {
 
 	}; 
 
-	class GlobalInstance {
-	public:
-		GlobalInstance();
-		virtual ~GlobalInstance() {
-
-		}
-	public:
-		void Merge(GlobalInstance* pG);
-		void Connect(BoxFrame* pBF, int id) {
-			mapConnected.Update(pBF, id);
-		}
-
-		void AddMapPoints(std::set<EdgeSLAM::MapPoint*> spMPs);
-
-	////Position
-	public:
-		void Update(std::vector<cv::Mat>& mat, ObjectSLAM* ObjSystem, float val = 1.285);
-		cv::Point2f ProjectPoint(const cv::Mat T, const cv::Mat& K);
-		cv::Mat GetPosition();
-		void UpdatePosition();
-		//void UpdatePosition(std::vector<)
-	private:
-		std::mutex mMutexPos;
-		cv::Mat pos;
-	////Position
-	////3D Bounding Box
-	public:
-		void CalculateBoundingBox();
-		void ProjectBB(std::vector<cv::Point2f>& vecProjPoints, const cv::Mat& K, const cv::Mat& T);
-		void DrawBB(cv::Mat& image, const std::vector<cv::Point2f>& projectedCorners);
-	private:
-		std::mutex mMutexBB;
-		std::vector<cv::Point3f> vecCorners;
-
-
-	////3D Bounding Box
-	public:
-		int mnId;
-		std::atomic<int> mnMatchFail;
-		ConcurrentSet<EdgeSLAM::MapPoint*> AllMapPoints;
-		ConcurrentMap<BoxFrame*, int> mapConnected;
-		static std::atomic<long unsigned int> mnNextGIId;
-	};
-
-	class Instance {
-	public:
-		Instance() : area(0.0){}
-		virtual ~Instance(){}
-	public:
-		//GlobalInstance* mpGlobal;
-		std::set<EdgeSLAM::MapPoint*> setMPs;
-		std::set<int> setKPs;
-
-		std::vector<cv::Point> contour;
-		cv::Mat mask;
-		cv::Rect rect;
-		cv::RotatedRect rrect;//elliipse and rotated rect;
-		cv::Point2f pt;
-		float area;
-	};
-
+	
+	
 	class AssoMatchRes {
 	public:
 		AssoMatchRes() :id(-1), res(false), req(false), iou(0.0) {}
@@ -132,19 +75,19 @@ namespace ObjectSLAM {
 
 	class InstanceMask {
 	public:
-		InstanceMask() :bInit(false), bRequest(true), id1(-1), id2(-1), nTrial(0), nMaxTrial(1){}
+		InstanceMask() :bInit(false), bRequest(true), id1(-1), id2(-1), nTrial(0), nMaxTrial(1), mnOriSize(0){}
 		virtual ~InstanceMask() {}
 	public:
 		cv::Mat mask;
-		ConcurrentMap<int, Instance*> FrameInstances;
+		ConcurrentMap<int, FrameInstance*> FrameInstances;
 		ConcurrentMap<int, GlobalInstance*> MapInstances;
 
-		std::map<int, cv::Rect> rect;
-		std::map<int, std::pair<int, float>> info;
+		//std::map<int, cv::Rect> rect;
+		//std::map<int, std::pair<int, float>> info;
 		std::atomic<bool> bInit, bRequest;
 		std::atomic<char> nTrial, nMaxTrial;
 		std::vector<cv::Point2f> vecObjectPoints;
-		std::atomic<int> mnMaxId;
+		std::atomic<int> mnMaxId, mnOriSize; //테스트용 초기 크기 기록
 		std::atomic<int> id1, id2; //id1 : target, id2 : reference
 		std::map<int, AssoMatchRes*> mapResAsso;
 	private:

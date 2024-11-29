@@ -49,6 +49,10 @@ namespace ObjectSLAM {
 		
 		file.write(ss.str().c_str(), ss.str().size());
 		file.close();
+
+		//association processisng time
+		this->SaveLatency("assoseg");
+		this->SaveLatency("assosam");
 	}
 
 	void ObjectSLAM::SaveLatency(std::string keyword)

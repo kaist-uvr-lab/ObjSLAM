@@ -2,6 +2,8 @@
 
 #include <SegInstance.h>
 #include <BoxFrame.h>
+#include <FrameInstance.h>
+#include <GlobalInstance.h>
 #include <KeyFrame.h>
 #include <Frame.h>
 #include <MapPoint.h>
@@ -14,7 +16,7 @@ namespace ObjectSLAM {
 
     ObjectSLAM* InstanceLinker::ObjectSystem = nullptr;
 
-    bool InstanceSim::CheckStaticObject(const std::vector<cv::Point>& contour, std::map<int, Instance*>& mapInstances, int th) {
+    bool InstanceSim::CheckStaticObject(const std::vector<cv::Point>& contour, std::map<int, FrameInstance*>& mapInstances, int th) {
 
         float n = mapInstances.size();
         if (n == 0)
@@ -49,7 +51,7 @@ namespace ObjectSLAM {
         return val >= th;
     }
 
-    void InstanceSim::FindOverlapMP(Instance* a, Instance* b, std::set<EdgeSLAM::MapPoint*>& setMPs){
+    void InstanceSim::FindOverlapMP(FrameInstance* a, FrameInstance* b, std::set<EdgeSLAM::MapPoint*>& setMPs){
         for (auto mp1 : a->setMPs)
         {
             if (!mp1 || mp1->isBad())
@@ -64,10 +66,10 @@ namespace ObjectSLAM {
             }
         }
     }
-    void InstanceSim::FindOverlapMP(Instance* a, EdgeSLAM::Frame* pF, std::set<EdgeSLAM::MapPoint*>& setMPs) {
+    void InstanceSim::FindOverlapMP(FrameInstance* a, EdgeSLAM::Frame* pF, std::set<EdgeSLAM::MapPoint*>& setMPs) {
 
     }
-    void InstanceSim::FindOverlapMP(Instance* a, EdgeSLAM::KeyFrame* pKF, std::set<EdgeSLAM::MapPoint*>& setMPs) {
+    void InstanceSim::FindOverlapMP(FrameInstance* a, EdgeSLAM::KeyFrame* pKF, std::set<EdgeSLAM::MapPoint*>& setMPs) {
         for (auto mp1 : a->setMPs)
         {
             if (!mp1 || mp1->isBad())
@@ -78,7 +80,7 @@ namespace ObjectSLAM {
             }
         }
     }
-    float InstanceSim::ComputeSimFromPartialMP(Instance* a, EdgeSLAM::Frame* b){
+    float InstanceSim::ComputeSimFromPartialMP(FrameInstance* a, EdgeSLAM::Frame* b){
         
         float nA = a->setMPs.size();
         float nC = 0;
@@ -89,7 +91,7 @@ namespace ObjectSLAM {
         }
         return 0.0;
     }
-    float InstanceSim::ComputeSimFromPartialMP(Instance* a, EdgeSLAM::KeyFrame* pKF){
+    float InstanceSim::ComputeSimFromPartialMP(FrameInstance* a, EdgeSLAM::KeyFrame* pKF){
         float nA = a->setMPs.size();
         float nC = 0;
         for (auto mp1 : a->setMPs)
@@ -106,7 +108,7 @@ namespace ObjectSLAM {
             res = 0.0;
         return res;
     }
-    float InstanceSim::ComputeSimFromPartialMP(Instance* a, Instance* b) {
+    float InstanceSim::ComputeSimFromPartialMP(FrameInstance* a, FrameInstance* b) {
         float nA = a->setMPs.size();
         float nC = 0;
         for (auto mp1 : a->setMPs)
@@ -128,7 +130,7 @@ namespace ObjectSLAM {
         //std::cout << "sim test = " << res << " " << nC << std::endl;
         return res;
     }
-    float InstanceSim::ComputeSimFromMP(Instance* a, Instance* b) {
+    float InstanceSim::ComputeSimFromMP(FrameInstance* a, FrameInstance* b) {
         float nA = a->setMPs.size();
         float nB = b->setMPs.size();
         float nC = 0;

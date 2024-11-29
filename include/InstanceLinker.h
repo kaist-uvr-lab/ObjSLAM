@@ -22,24 +22,24 @@ namespace ObjectSLAM {
 
 	class SegInstance;
     class BoxFrame;
-    class Instance;
+    class FrameInstance;
     class GlobalInstance;
     class ObjectSLAM;
 
     class InstanceSim {
     public:
 
-        static bool CheckStaticObject(const std::vector<cv::Point>& contour, std::map<int, Instance*>& mapInstances, int th = 3);
+        static bool CheckStaticObject(const std::vector<cv::Point>& contour, std::map<int, FrameInstance*>& mapInstances, int th = 3);
 
-        static void FindOverlapMP(Instance* a, Instance* b, std::set<EdgeSLAM::MapPoint*>& setMPs);
-        static void FindOverlapMP(Instance* a, EdgeSLAM::Frame* pF, std::set<EdgeSLAM::MapPoint*>& setMPs);    
-        static void FindOverlapMP(Instance* a, EdgeSLAM::KeyFrame* pKF, std::set<EdgeSLAM::MapPoint*>& setMPs);
+        static void FindOverlapMP(FrameInstance* a, FrameInstance* b, std::set<EdgeSLAM::MapPoint*>& setMPs);
+        static void FindOverlapMP(FrameInstance* a, EdgeSLAM::Frame* pF, std::set<EdgeSLAM::MapPoint*>& setMPs);
+        static void FindOverlapMP(FrameInstance* a, EdgeSLAM::KeyFrame* pKF, std::set<EdgeSLAM::MapPoint*>& setMPs);
 
-        static float ComputeSimFromMP(Instance* a, Instance* b);
-        static float ComputeSimFromPartialMP(Instance* a, Instance* b);
-        static float ComputeSimFromPartialMP(Instance* a, EdgeSLAM::Frame* b);
-        static float ComputeSimFromPartialMP(Instance* a, EdgeSLAM::KeyFrame* b);
-        static float ComputeSimFromIOU(Instance* a, Instance* b);
+        static float ComputeSimFromMP(FrameInstance* a, FrameInstance* b);
+        static float ComputeSimFromPartialMP(FrameInstance* a, FrameInstance* b);
+        static float ComputeSimFromPartialMP(FrameInstance* a, EdgeSLAM::Frame* b);
+        static float ComputeSimFromPartialMP(FrameInstance* a, EdgeSLAM::KeyFrame* b);
+        static float ComputeSimFromIOU(FrameInstance* a, FrameInstance* b);
         static float ComputeSimFromIOU(const cv::Mat& mask1, const cv::Mat& mask2);
 
 
