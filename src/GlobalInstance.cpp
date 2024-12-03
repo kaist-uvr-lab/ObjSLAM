@@ -49,7 +49,7 @@ namespace ObjectSLAM {
 
 		EIF::EIForest<float, 3> forest;
 
-		double th = 0.5;//mfEIFthreshold;
+		double th = 0.6;//mfEIFthreshold;
 
 		//Appropriately expand the EIF threshold for non-textured objects
 		/*if (mnClass == 73 || mnClass == 46 || mnClass == 41)
@@ -162,11 +162,13 @@ namespace ObjectSLAM {
 			cv::Point2f pt;
 			float d = 0.0;
 			bool bproj = CommonUtils::Geometry::ProjectPoint(pt, d, pMPi->GetWorldPos(), K, R, t);
-			if (!bproj || !rect.contains(pt))
+			
+			/*if (!bproj || !rect.contains(pt))
 			{
 				this->AllMapPoints.Erase(pMPi);
 				nDel++;
-			}
+			}*/
+
 			/*if (!rect.contains(pt))
 			{
 				AllMapPoints.Erase(pMPi);
@@ -456,6 +458,7 @@ namespace ObjectSLAM {
 				vecCorners.push_back(cv::Point3f(transformedCorner));
 			}
 		}
+		this->EIFFilterOutlier();
 	}
 
 	cv::Mat GlobalInstance::GetPosition() {

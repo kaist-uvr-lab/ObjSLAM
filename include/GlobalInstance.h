@@ -13,6 +13,7 @@
 
 namespace EdgeSLAM {
 	class MapPoint;
+	class KeyFrame;
 }
 
 namespace ObjectSLAM {
@@ -55,7 +56,7 @@ namespace ObjectSLAM {
 		cv::Mat pos;
 		cv::Mat axis;
 		float sx, sy, sz;
-		////Position
+		////Position 
 		////3D Bounding Box
 	public:
 		void CalculateBoundingBox();
@@ -74,6 +75,9 @@ namespace ObjectSLAM {
 		ConcurrentMap<BoxFrame*, int> mapConnected;
 		ConcurrentMap<FrameInstance*, int> mapInstances;
 		static std::atomic<long unsigned int> mnNextGIId;
+
+		ConcurrentMap<std::pair<int,int>, std::set<EdgeSLAM::KeyFrame*>> MapKFs;
+		ConcurrentMap<std::pair<int, int>, std::map<int, std::set<EdgeSLAM::MapPoint*>>> MapMPs;
 	};
 }
 

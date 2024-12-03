@@ -16,6 +16,111 @@ namespace ObjectSLAM {
 
     ObjectSLAM* InstanceLinker::ObjectSystem = nullptr;
 
+    std::pair<bool, cv::Point2f> InstanceSim::ConvertFlowPoint(const cv::Mat& flow, const cv::Point2f& src) {
+
+        auto rpt = src / 4;
+
+        bool bres = false;
+        auto dst = cv::Point2f(-1, -1);
+                
+        cv::Vec<schar, 2> tmp = flow.at<cv::Vec<schar, 2>>(rpt) * 4;
+
+        if (tmp.val[0] == 0 && tmp.val[1] == 0) {
+            dst.x =  -2;
+            dst.y = -2;
+            auto res = std::make_pair(bres, dst);
+            return res;
+        }
+        /*
+        dst.x = src.x+tmp.val[0];
+        dst.y = src.y+tmp.val[1];
+        if (dst.x < 0 || dst.x >= flow.cols*4 || dst.y < 0 || dst.y >= flow.rows*4)
+        {
+            std::cout << "flow err bound = " << dst << std::endl;
+            dst.x = -1;
+            dst.y = -1;
+            auto res = std::make_pair(bres, dst);
+            return res;
+        }
+        */
+
+        bres = true;
+        dst.x = tmp.val[0];
+        dst.y = tmp.val[1];
+        auto res = std::make_pair(bres, dst);
+        return res;
+    }
+
+    bool InstanceSim::ComputeRaftInstance(const cv::Mat& flow, FrameInstance* pPrev, FrameInstance* pCurr) {
+        //cetner
+        //rect
+        //contour
+        auto rect = pPrev->rect;
+        auto pt = pPrev->pt;
+        auto contour = pPrev->contour;
+        cv::Point2f npt;
+        std::vector<cv::Point2f> ncontour;
+        std::vector<std::pair<bool, cv::Point2f>> res;
+
+        res.push_back((ConvertFlowPoint(flow, pt)));
+
+        /*for(auto cpt : contour){
+            res.push_back((ConvertFlowPoint(flow, cpt)));
+        }*/
+
+        int ntest = 0;
+        int nfail1 = 0;
+        int nfail2 = 0;
+        for (auto pair : res)
+        {
+            auto b = pair.first;
+            auto rpt = pair.second;
+            if (b)
+                ntest++;
+            else {
+                if (rpt.x == -1)
+                    nfail1++;
+                else if (rpt.x == -2)
+                    nfail2++;
+            }
+        }
+
+        if (!res[0].first)
+        {
+            auto pt = res[0].second;
+            std::cout << "fail raft flow = " << pt.x << std::endl;
+            return false;
+        }
+        else
+        {
+            auto rpt = res[0].second;
+            pCurr->pt = pt + rpt;
+            rect.x += rpt.x;
+            rect.y += rpt.y;
+            pCurr->rect = rect;
+            for (auto pt : contour) {
+                auto npt = pt;
+                npt.x += rpt.x;
+                npt.y += rpt.y;
+                pCurr->contour.push_back(npt);
+            }
+
+            pCurr->area = pPrev->area;
+
+            //mask
+            std::vector<std::vector<cv::Point>> contours;
+            contours.push_back(pCurr->contour);
+            cv::Mat newmask = cv::Mat::zeros(flow.rows*4, flow.cols*4, CV_8UC1);;
+            cv::drawContours(newmask, contours, 0, cv::Scalar(255, 255, 255), -1);
+            pCurr->mask = newmask.clone();
+            return true;
+        }
+        //if(ntest != res.size())
+            //std::cout << "flow test = " <<res[0].first<<" == " << ntest << " " << res.size() << "==" << nfail1<<", "<<nfail2<< std::endl;
+
+        return false;
+    }
+
     bool InstanceSim::CheckStaticObject(const std::vector<cv::Point>& contour, std::map<int, FrameInstance*>& mapInstances, int th) {
 
         float n = mapInstances.size();

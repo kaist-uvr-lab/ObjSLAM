@@ -39,19 +39,21 @@ namespace ObjectSLAM {
         static float ComputeSimFromPartialMP(FrameInstance* a, FrameInstance* b);
         static float ComputeSimFromPartialMP(FrameInstance* a, EdgeSLAM::Frame* b);
         static float ComputeSimFromPartialMP(FrameInstance* a, EdgeSLAM::KeyFrame* b);
-        static float ComputeSimFromIOU(FrameInstance* a, FrameInstance* b);
+        static float ComputeSimFromIOU(FrameInstance* a, FrameInstance* b);  
         static float ComputeSimFromIOU(const cv::Mat& mask1, const cv::Mat& mask2);
 
 
         static bool ComputSim(const std::vector<cv::Point>& contours, const std::vector<cv::Point2f>& pts, float& val, float th = 0.5);
         
+        static std::pair<bool, cv::Point2f> ConvertFlowPoint(const cv::Mat& flow, const cv::Point2f& src);
+        static bool ComputeRaftInstance(const cv::Mat& flow, FrameInstance* pPrev, FrameInstance* pCurr);
     };
 
     class InstanceLinker {
     public:
         InstanceLinker(){}
         virtual ~InstanceLinker(){}
-    public:
+    public: 
 
         static ObjectSLAM* ObjectSystem;
         static void SetSystem(ObjectSLAM* p);

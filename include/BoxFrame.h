@@ -50,11 +50,16 @@ namespace ObjectSLAM {
 	
 	class AssoMatchRes {
 	public:
-		AssoMatchRes() :id(-1), res(false), req(false), iou(0.0) {}
+		AssoMatchRes() :id2(-1), res(false), req(false), iou(0.0), nDataType(0), nAssotype(0){}
 		std::string print(int fid, int gid)
 		{
 			std::stringstream ss;
-			ss << fid << ", " << id << ", " << res << ", " << req << ", " << iou;
+			std::string strType = " ,";
+			if (nAssotype == 1)
+				strType = "seg,";
+			if (nAssotype == 2)
+				strType = "sam,";
+			ss << fid << ", " << id2 << ", " <<strType<< res << ", " << req << ", " << iou;
 			if(gid > 0)
 			{ 
 				ss << ", " << gid;
@@ -63,13 +68,21 @@ namespace ObjectSLAM {
 		}
 		std::string print(int _id) {
 			std::stringstream ss;
-			ss << _id << ", " << id << ", " << res << ", " << req << ", " << iou;
+			std::string strType = " ,";
+			if (nAssotype == 1)
+				strType = "seg,";
+			if (nAssotype == 2)
+				strType = "sam,";
+			ss << _id << ", " << id2 << ", " << strType << res << ", " << req << ", " << iou;
 			return ss.str();
 		}
 	public:
-		int id;
-		bool res;
+		int id1; //frame에서 instance mask 의 id or map의 global id
+		int id2; //현재 마스크의 인스턴스
+		bool res; //결과
 		bool req; //sam
+		int nAssotype; //1 = segmentation, 2 = sam
+		int nDataType; //1 = frame, 2 = map
 		float iou;
 	};
 
@@ -81,6 +94,7 @@ namespace ObjectSLAM {
 		cv::Mat mask;
 		ConcurrentMap<int, FrameInstance*> FrameInstances;
 		ConcurrentMap<int, GlobalInstance*> MapInstances;
+		ConcurrentVector<AssoMatchRes*> mvResAsso;
 
 		//std::map<int, cv::Rect> rect;
 		//std::map<int, std::pair<int, float>> info;
@@ -89,7 +103,7 @@ namespace ObjectSLAM {
 		std::vector<cv::Point2f> vecObjectPoints;
 		std::atomic<int> mnMaxId, mnOriSize; //테스트용 초기 크기 기록
 		std::atomic<int> id1, id2; //id1 : target, id2 : reference
-		std::map<int, AssoMatchRes*> mapResAsso;
+		std::map<int, AssoMatchRes*> mapResAsso; //교제 예정
 	private:
 	};
 
