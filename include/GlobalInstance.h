@@ -34,6 +34,16 @@ namespace ObjectSLAM {
 			mapConnected.Update(pBF, id);
 		}*/
 		void EIFFilterOutlier();
+		//키프레임 연결. spherical coordinate으로 관리
+		void Update(EdgeSLAM::KeyFrame* pKF);
+		//spherical coordinate으로 현재 프레임과 관련된 맵포인트 획득
+		void GetLocalMPs(std::set<EdgeSLAM::MapPoint*>& spMPs,EdgeSLAM::KeyFrame* pKF, float angle, float dist, int bin = 1);
+		//local mp가 현재 프레임에 있는지 프로젝션
+		void GetProjPTs(const std::set<EdgeSLAM::MapPoint*>& spMPs, std::vector<cv::Point2f>& vecPTs, EdgeSLAM::KeyFrame* pKF);
+
+		cv::Point2f GetCenter(const std::vector<cv::Point2f>& points);
+		cv::Rect GetRect(const std::vector<cv::Point2f>& points);
+
 		void Connect(FrameInstance* pIns, BoxFrame* pBF, int id);
 		//mask의 맵포인트 추가
 		void AddMapPoints(std::set<EdgeSLAM::MapPoint*> spMPs);
@@ -75,7 +85,6 @@ namespace ObjectSLAM {
 		ConcurrentMap<BoxFrame*, int> mapConnected;
 		ConcurrentMap<FrameInstance*, int> mapInstances;
 		static std::atomic<long unsigned int> mnNextGIId;
-
 		ConcurrentMap<std::pair<int,int>, std::set<EdgeSLAM::KeyFrame*>> MapKFs;
 		ConcurrentMap<std::pair<int, int>, std::map<int, std::set<EdgeSLAM::MapPoint*>>> MapMPs;
 	};

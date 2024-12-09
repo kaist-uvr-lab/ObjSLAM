@@ -26,7 +26,7 @@ namespace ObjectSLAM {
 		//포즈 최적화를 위해
 
 		void Update(EdgeSLAM::KeyFrame* pKF);
-
+		
 		//GlobalInstance* mpGlobal;
 		std::set<EdgeSLAM::MapPoint*> setMPs;
 		std::set<int> setKPs;

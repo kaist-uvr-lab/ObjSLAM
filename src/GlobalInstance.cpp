@@ -6,6 +6,7 @@
 
 #include <KeyFrame.h>
 #include <MapPoint.h>
+#include <Camera.h>
 #include <Utils_Geometry.h>
 #include <EIF.h>
 
@@ -132,6 +133,125 @@ namespace ObjectSLAM {
 			ObjSystem->vecObjectAssoRes.push_back(ss.str());
 		}
 
+	}
+
+	void GlobalInstance::GetLocalMPs(std::set<EdgeSLAM::MapPoint*>& spMPs, EdgeSLAM::KeyFrame* pKF, float angle, float dist, int bin) {
+		//pPrevG의 인접 프레임 얻고 그 프레임의 맵포인트가 현재 프레임의 마스크에 있는가 체크
+		cv::Mat dir = this->GetPosition() - pKF->GetCameraCenter();
+		auto res = Utils::CalcSphericalCoordinate(dir, angle, dist); //0.1
+		auto keykf = std::make_pair(res.x, res.y);
+		std::vector<cv::Point> vecKeys = Utils::GetNeighborSphericalCoordinate(cv::Point(res.x, res.y), angle, bin);
+		
+		for (auto key : vecKeys)
+		{
+			auto tmp = std::make_pair(key.x, key.y);
+			auto mapMPs = this->MapMPs.Get(tmp);
+			for (auto pair : mapMPs)
+			{
+				auto setTempMP = pair.second;
+				for (auto pMPi : setTempMP)
+				{
+					if (!pMPi || pMPi->isBad())
+						continue;
+					if (spMPs.count(pMPi))
+						continue;
+					spMPs.insert(pMPi);
+				}
+			}
+		}
+	}
+	void GlobalInstance::GetProjPTs(const std::set<EdgeSLAM::MapPoint*>& spMPs, std::vector<cv::Point2f>& vecPTs, EdgeSLAM::KeyFrame* pKF) {
+		
+		const cv::Mat T = pKF->GetPose();
+		const cv::Mat K = pKF->K.clone();
+		const cv::Mat R = T.rowRange(0, 3).colRange(0, 3);
+		const cv::Mat t = T.rowRange(0, 3).col(3);
+
+		int w = pKF->mpCamera->mnWidth;
+		int h = pKF->mpCamera->mnHeight;
+
+		for (auto pMPi : spMPs)
+		{
+			if (!pMPi || pMPi->isBad())
+				continue;
+			float d;
+			cv::Point2f pt;
+			if (CommonUtils::Geometry::ProjectPoint(pt, d, pMPi->GetWorldPos(), K, R, t))
+			{
+				if (CommonUtils::Geometry::IsInImage(pt, w, h))
+				{
+					vecPTs.push_back(pt);
+				}
+			}
+		}
+	}
+
+	cv::Point2f GetCenter(const std::vector<cv::Point2f>& points) {
+
+		cv::Point2f res(0, 0);
+		for (auto pt : points)
+		{
+			res += pt;
+		}
+		res.x /= points.size();
+		res.y /= points.size();
+		return res;
+	}
+
+	cv::Rect GlobalInstance::GetRect(const std::vector<cv::Point2f>& points) {
+		if (points.size() < 2)
+			return cv::Rect(0,0,0,0);
+
+		float min_x = points[0].x;
+		float min_y = points[0].y;
+		float max_x = points[0].x;
+		float max_y = points[0].y;
+
+		for (const auto& pt : points) {
+			min_x = std::min(min_x, pt.x);
+			min_y = std::min(min_y, pt.y);
+			max_x = std::max(max_x, pt.x);
+			max_y = std::max(max_y, pt.y);
+		}
+
+		return cv::Rect(min_x, min_y, max_x - min_x, max_y - min_y);
+	}
+
+	void GlobalInstance::Update(EdgeSLAM::KeyFrame* pKF) {
+
+		std::vector<cv::Mat> mat;
+		this->Update(mat);
+
+		cv::Mat dir = this->GetPosition() - pKF->GetCameraCenter();
+		auto res = Utils::CalcSphericalCoordinate(dir, 45.0, 0.01); //0.1
+		std::set<EdgeSLAM::KeyFrame*> spKFs;
+		auto keykf = std::make_pair(res.x, res.y);
+		if (this->MapKFs.Count(keykf))
+		{
+			spKFs = this->MapKFs.Get(keykf);
+		}
+		spKFs.insert(pKF);
+		this->MapKFs.Update(keykf, spKFs);
+		//std::cout << pKF->mnId << " = spherical test = " << pPrevG->mnId << " " << res << " == " << spKFs.size() << std::endl;
+
+		this->MapMPs.Clear();
+		auto spMPs = this->AllMapPoints.Get();
+		for (auto pMPi : spMPs)
+		{
+			if (!pMPi || pMPi->isBad())
+				continue;
+			cv::Mat dir2 = this->GetPosition() - pMPi->GetWorldPos();
+			auto res2 = Utils::CalcSphericalCoordinate(dir2, 45.0, 0.01); //0.1
+			auto keymp1 = std::make_pair(res2.x, res2.y);
+			auto keymp2 = res2.z;
+			std::map<int, std::set<EdgeSLAM::MapPoint*>> spMPs;
+			if (this->MapMPs.Count(keymp1))
+			{
+				spMPs = this->MapMPs.Get(keymp1);
+			}
+			spMPs[keymp2].insert(pMPi);
+			this->MapMPs.Update(keymp1, spMPs);
+		}
 	}
 
 	void GlobalInstance::Connect(FrameInstance* pIns, BoxFrame* pBF, int id) {

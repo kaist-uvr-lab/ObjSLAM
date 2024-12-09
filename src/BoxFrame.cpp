@@ -24,7 +24,6 @@ namespace ObjectSLAM {
 	
 	ObjectSLAM* BoxFrame::ObjSystem = nullptr;
 	
-
 	BoxFrame::BoxFrame(int _id) :BaseSLAM::AbstractFrame(_id), mbInitialized(false), mpPrevBF(nullptr), mbYolo(false), mbDetectron2(false), mbSam2(false)
 	{}
 	BoxFrame::BoxFrame(int _id, const int w, const int h, BaseSLAM::BaseDevice* Device, BaseSLAM::AbstractPose* _Pose) : BaseSLAM::AbstractFrame(Device, _Pose, _id), BaseSLAM::KeyPointContainer(mpCamera), BaseSLAM::StereoDataContainer(), mUsed(cv::Mat::zeros(h, w, CV_32SC1)),
@@ -831,6 +830,7 @@ namespace ObjectSLAM {
 			return -1;
 		return sid;
 	}
+	
 	SegInstance* BoxFrame::GetFrameInstance(EdgeSLAM::MapPoint* pMP) {
 		if (!mpRefKF)
 			return nullptr;
@@ -980,4 +980,106 @@ namespace ObjectSLAM {
 		std::unique_lock<std::mutex> lock(mMutexInstance);
 		seg.at<uchar>(pt) = _sid;
 	}
+
+	//frame과 map의 구분이 필요함.
+	//frame = prev ins + curr ins + global
+	//map   = global   + curr ins ==> global을 미리 curr의 map instance에 추가?
+	void InstanceMask::UpdateAssociation(InstanceMask* pPrev, BoxFrame* pCurrBF, BoxFrame* pPrevBF, ObjectSLAM* ObjSystem) {
+
+		auto vecResAsso = this->mvResAsso.get();
+
+		for (auto assores : vecResAsso)
+		{
+			if (!assores->res)
+				continue;
+			
+			int id1 = -1;
+
+			if (assores->nDataType == 1)
+			{
+				id1 = assores->id1;
+			}
+			int id2 = assores->id2;
+
+			if (id1 == 0 || id2 == 0)
+			{
+				std::cout << "object matching error????" << std::endl;
+				continue;
+			}
+
+			/*if (pPrevG && pCurrG && pPrevG->mnId != pCurrG->mnId)
+			{
+				vecNeedMerge.push_back(std::make_pair(pPrevG, pCurrG));
+			}*/
+
+			FrameInstance* pPrevIns = nullptr;
+			GlobalInstance* pPrevG = nullptr;
+			if(assores->nDataType == 1){
+				pPrevIns = pPrev->FrameInstances.Get(id1);
+				pPrevG = pPrev->MapInstances.Get(id1);
+			}
+			auto pCurrIns = this->FrameInstances.Get(id2);
+			auto pCurrG = this->MapInstances.Get(id2);
+
+			//글로벌 인스턴스 연결 
+			if (assores->nDataType == 1)
+			{
+				if (pPrevG && !pCurrG)
+				{
+					this->MapInstances.Update(id2, pPrevG);
+					pPrevG->Connect(pCurrIns, pCurrBF, id2);
+					pCurrG = pPrevG;
+					//pPrevG->EIFFilterOutlier();
+					//pPrevG->Connect(pNewBF, id2);
+					//pPrevG->AddMapPoints(pCurrIns->setMPs);
+				}
+				if (!pPrevG && pCurrG)
+				{
+					pPrev->MapInstances.Update(id1, pCurrG);
+					pCurrG->Connect(pPrevIns, pPrevBF, id1);
+					//pCurrG->EIFFilterOutlier();
+					//pCurrG->Connect(pPrevBF, id1);
+					//pCurrG->AddMapPoints(pPrevIns->setMPs);
+				}
+
+				//글로벌 인스턴스 생성
+				if (!pPrevG && !pCurrG)
+				{
+					auto pGlobal = new GlobalInstance();
+					pPrev->MapInstances.Update(id1, pGlobal);
+					this->MapInstances.Update(id2, pGlobal);
+
+					pGlobal->Connect(pPrevIns, pPrevBF, id1);
+					pGlobal->Connect(pCurrIns, pCurrBF, id2);
+					pPrevG = pGlobal;
+					pCurrG = pGlobal;
+					//pGlobal->EIFFilterOutlier();
+					//pGlobal->Connect(pPrevBF, id1);
+					//pGlobal->Connect(pNewBF, id2);
+					//pGlobal->AddMapPoints(pCurrIns->setMPs);
+					//pGlobal->AddMapPoints(pPrevIns->setMPs);
+				}
+
+				pCurrG->Update(pCurrBF->mpRefKF);
+
+				if (pPrevG)
+				{
+					ObjSystem->vecObjectAssoRes.push_back(assores->print(id1, pPrevG->mnId));
+				}
+				else
+					ObjSystem->vecObjectAssoRes.push_back(assores->print(id2));
+			}
+			else
+			{
+				//맵 인스턴스를 바로 추가할 때
+				if(pCurrG){
+					ObjSystem->vecObjectAssoRes.push_back(assores->print(id1, pCurrG->mnId));
+				}
+			}
+			
+			
+		}
+
+	}
+
 }

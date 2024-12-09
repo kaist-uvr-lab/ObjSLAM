@@ -4,6 +4,7 @@
 #include <MapPoint.h>
 
 namespace ObjectSLAM {
+
 	void FrameInstance::Update(EdgeSLAM::KeyFrame* pKF) {
 		if (contour.size() == 0)
 			return;
@@ -22,6 +23,6 @@ namespace ObjectSLAM {
 				this->setMPs.insert(pMPi);
 			}
 		}
-
 	}
+
 }

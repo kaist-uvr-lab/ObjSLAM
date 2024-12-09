@@ -29,6 +29,8 @@ namespace ObjectSLAM {
     class InstanceSim {
     public:
 
+        static float CalculateIOU(const cv::Rect& rect1, const cv::Rect& rect2);
+
         static bool CheckStaticObject(const std::vector<cv::Point>& contour, std::map<int, FrameInstance*>& mapInstances, int th = 3);
 
         static void FindOverlapMP(FrameInstance* a, FrameInstance* b, std::set<EdgeSLAM::MapPoint*>& setMPs);

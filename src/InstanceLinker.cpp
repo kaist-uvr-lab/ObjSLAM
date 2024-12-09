@@ -16,6 +16,31 @@ namespace ObjectSLAM {
 
     ObjectSLAM* InstanceLinker::ObjectSystem = nullptr;
 
+    float InstanceSim::CalculateIOU(const cv::Rect& rect1, const cv::Rect& rect2) {
+        // 교집합 영역 계산
+        int x1 = std::max(rect1.x, rect2.x);
+        int y1 = std::max(rect1.y, rect2.y);
+        int x2 = std::min(rect1.x + rect1.width, rect2.x + rect2.width);
+        int y2 = std::min(rect1.y + rect1.height, rect2.y + rect2.height);
+
+        // 교집합이 없는 경우
+        if (x2 < x1 || y2 < y1)
+            return 0.0f;
+
+        // 교집합 면적 계산
+        float intersection_area = (x2 - x1) * (y2 - y1);
+
+        // 각 사각형의 면적 계산
+        float area1 = rect1.width * rect1.height;
+        float area2 = rect2.width * rect2.height;
+
+        // 합집합 면적 계산 (area1 + area2 - intersection_area)
+        float union_area = area1 + area2 - intersection_area;
+
+        // IOU 계산
+        return intersection_area / union_area;
+    }
+
     std::pair<bool, cv::Point2f> InstanceSim::ConvertFlowPoint(const cv::Mat& flow, const cv::Point2f& src) {
 
         auto rpt = src / 4;
@@ -88,7 +113,7 @@ namespace ObjectSLAM {
         if (!res[0].first)
         {
             auto pt = res[0].second;
-            std::cout << "fail raft flow = " << pt.x << std::endl;
+            //std::cout << "fail raft flow = " << pt.x << std::endl;
             return false;
         }
         else

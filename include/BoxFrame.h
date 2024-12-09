@@ -50,8 +50,8 @@ namespace ObjectSLAM {
 	
 	class AssoMatchRes {
 	public:
-		AssoMatchRes() :id2(-1), res(false), req(false), iou(0.0), nDataType(0), nAssotype(0){}
-		std::string print(int fid, int gid)
+		AssoMatchRes() :id1(-1),id2(-1), res(false), req(false), iou(0.0), nDataType(0), nAssotype(0){}
+		std::string print(int fid, int gid = 0)
 		{
 			std::stringstream ss;
 			std::string strType = " ,";
@@ -59,21 +59,11 @@ namespace ObjectSLAM {
 				strType = "seg,";
 			if (nAssotype == 2)
 				strType = "sam,";
-			ss << fid << ", " << id2 << ", " <<strType<< res << ", " << req << ", " << iou;
+			ss << id1 << ", " << id2 << ", " <<strType<< res << ", " << req << ", " << iou;
 			if(gid > 0)
 			{ 
 				ss << ", " << gid;
 			}
-			return ss.str();
-		}
-		std::string print(int _id) {
-			std::stringstream ss;
-			std::string strType = " ,";
-			if (nAssotype == 1)
-				strType = "seg,";
-			if (nAssotype == 2)
-				strType = "sam,";
-			ss << _id << ", " << id2 << ", " << strType << res << ", " << req << ", " << iou;
 			return ss.str();
 		}
 	public:
@@ -91,6 +81,8 @@ namespace ObjectSLAM {
 		InstanceMask() :bInit(false), bRequest(true), id1(-1), id2(-1), nTrial(0), nMaxTrial(1), mnOriSize(0){}
 		virtual ~InstanceMask() {}
 	public:
+		void UpdateAssociation(InstanceMask* pPrev, BoxFrame* pCurrBF, BoxFrame* pPrevBF, ObjectSLAM* ObjSystem);
+	public:
 		cv::Mat mask;
 		ConcurrentMap<int, FrameInstance*> FrameInstances;
 		ConcurrentMap<int, GlobalInstance*> MapInstances;
@@ -103,7 +95,7 @@ namespace ObjectSLAM {
 		std::vector<cv::Point2f> vecObjectPoints;
 		std::atomic<int> mnMaxId, mnOriSize; //테스트용 초기 크기 기록
 		std::atomic<int> id1, id2; //id1 : target, id2 : reference
-		std::map<int, AssoMatchRes*> mapResAsso; //교제 예정
+		//std::map<int, AssoMatchRes*> mapResAsso; //교제 예정
 	private:
 	};
 
