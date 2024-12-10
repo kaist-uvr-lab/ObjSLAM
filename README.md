@@ -3,6 +3,13 @@
 
 This work was supported by Institute of Information & communications Technology Planning & Evaluation (IITP) grant funded by the Korea government(MSIT) (No.2019-0-01270, WISE AR UI/UX Platform Development for Smartglasses)
 
+** Goal
+edge-assisted Object SLAM for multi device synchronization
+
+** Dependencies
+opencv
+g2o
+eigen
 
 **How to test this project?**
 1. Install the requirements.
@@ -15,7 +22,6 @@ This work was supported by Institute of Information & communications Technology 
   2) Smartphone (Build Settings = Android) : NetworkLobby(0), SmartphoneConnected(1)
 
 3. Start the application in both devices.
-
 
 
 **About Deprecated Version**
