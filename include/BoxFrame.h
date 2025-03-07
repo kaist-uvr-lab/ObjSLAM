@@ -14,6 +14,8 @@
 #include <StereoDataContainer.h>
 #include <BaseDevice.h>
 
+#include <ObjectSLAMTypes.h>
+
 namespace EdgeSLAM {
 	class KeyFrame;
 	class Frame;
@@ -29,6 +31,11 @@ namespace ObjectSLAM {
 	class SegInstance;
 	class GlobalInstance;
 	class FrameInstance;
+	
+	namespace GOMAP {
+		class GaussianObject;
+	}
+
 	class NewBoxFrame {
 	public:
 		NewBoxFrame(int w, int h):N(0), mUsed(cv::Mat::zeros(h,w, CV_8UC1)), mDesc(cv::Mat::zeros(0,32,CV_8UC1)){
@@ -45,19 +52,19 @@ namespace ObjectSLAM {
 	private:
 
 	}; 
-
-	
-	
+		
 	class AssoMatchRes {
 	public:
-		AssoMatchRes() :id1(-1),id2(-1), res(false), req(false), iou(0.0), nDataType(0), nAssotype(0){}
+		AssoMatchRes() :id1(-1),id2(-1), res(false), req(false), iou(0.0), nType1(InstanceType::SEG), nType2(InstanceType::SEG){}
+		AssoMatchRes(int _id1, int _id2, const InstanceType& _type1, const InstanceType& _type2) :
+			id1(_id1), id2(_id2), res(false), req(false), iou(0.0), nType1(_type1), nType2(_type2) {}
 		std::string print(int fid, int gid = 0)
 		{
 			std::stringstream ss;
 			std::string strType = " ,";
-			if (nAssotype == 1)
+			if (nType1 == InstanceType::SEG)
 				strType = "seg,";
-			if (nAssotype == 2)
+			if (nType1 == InstanceType::SAM)
 				strType = "sam,";
 			ss << id1 << ", " << id2 << ", " <<strType<< res << ", " << req << ", " << iou;
 			if(gid > 0)
@@ -71,8 +78,9 @@ namespace ObjectSLAM {
 		int id2; //현재 마스크의 인스턴스
 		bool res; //결과
 		bool req; //sam
-		int nAssotype; //1 = segmentation, 2 = sam
-		int nDataType; //1 = frame, 2 = map
+		//int nAssotype; //1 = segmentation, 2 = sam
+		//int nDataType; //1 = frame, 2 = map
+		InstanceType nType1, nType2; //id1의 data type을 따름.
 		float iou;
 	};
 
@@ -85,8 +93,12 @@ namespace ObjectSLAM {
 	public:
 		cv::Mat mask;
 		ConcurrentMap<int, FrameInstance*> FrameInstances;
-		ConcurrentMap<int, GlobalInstance*> MapInstances;
-		ConcurrentVector<AssoMatchRes*> mvResAsso;
+		ConcurrentMap<int, GlobalInstance*> MapInstances; //삭제 예정
+		ConcurrentMap<int, GOMAP::GaussianObject*> GaussianMaps;
+
+		//matching result
+		ConcurrentVector<AssoMatchRes*> mvResAsso; //삭제 예정
+		std::map<int, AssoMatchRes*> mapResAssociation; //map, raft, prev id, assomatchres : id1 = prev, id2 : curr, iou
 
 		//std::map<int, cv::Rect> rect;
 		//std::map<int, std::pair<int, float>> info;
@@ -94,7 +106,7 @@ namespace ObjectSLAM {
 		std::atomic<char> nTrial, nMaxTrial;
 		std::vector<cv::Point2f> vecObjectPoints;
 		std::atomic<int> mnMaxId, mnOriSize; //테스트용 초기 크기 기록
-		std::atomic<int> id1, id2; //id1 : target, id2 : reference
+		std::atomic<int> id1, id2; //id1 : target(curr), id2 : reference(prev)
 		//std::map<int, AssoMatchRes*> mapResAsso; //교제 예정
 	private:
 	};

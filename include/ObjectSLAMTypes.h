@@ -21,6 +21,11 @@ namespace EdgeSLAM {
 }
 
 namespace ObjectSLAM {
+
+	enum class InstanceType {
+		SEG, SAM, RAFT, MAP
+	};
+
 	class ObjectPoint;
 	class BoundingBox;
 	typedef BaseSLAM::MapDataContainer<ObjectPoint> ObjPointContainer;

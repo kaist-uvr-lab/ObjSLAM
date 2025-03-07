@@ -47,7 +47,12 @@ namespace ObjectSLAM {
 
         bool bres = false;
         auto dst = cv::Point2f(-1, -1);
-                
+        if (rpt.x < 0 || rpt.y < 0 || rpt.x >= flow.cols || rpt.y >= flow.rows)
+        {
+            auto res = std::make_pair(bres, dst);
+            return res;
+        }
+
         cv::Vec<schar, 2> tmp = flow.at<cv::Vec<schar, 2>>(rpt) * 4;
 
         if (tmp.val[0] == 0 && tmp.val[1] == 0) {
@@ -94,7 +99,7 @@ namespace ObjectSLAM {
         }*/
 
         int ntest = 0;
-        int nfail1 = 0;
+        /*int nfail1 = 0;
         int nfail2 = 0;
         for (auto pair : res)
         {
@@ -108,12 +113,52 @@ namespace ObjectSLAM {
                 else if (rpt.x == -2)
                     nfail2++;
             }
-        }
+        }*/
 
         if (!res[0].first)
         {
-            auto pt = res[0].second;
-            //std::cout << "fail raft flow = " << pt.x << std::endl;
+            //average point
+            //반이상 변환이 되면 나머지를 그 중심으로 변환.
+            auto tpt = res[0].second;
+            std::cout << "fail raft flow = " << pt.x << std::endl << std::endl << std::endl;;
+
+            std::vector<cv::Point2f> pts;
+            pts.push_back(cv::Point2f(pt.x - 4, pt.y));
+            pts.push_back(cv::Point2f(pt.x + 4, pt.y));
+            pts.push_back(cv::Point2f(pt.x, pt.y - 4));
+            pts.push_back(cv::Point2f(pt.x, pt.y + 4));
+
+            int nfail = 0;
+            for (auto tpt : pts)
+            {
+                auto tres = ConvertFlowPoint(flow, tpt);
+                if (tres.first)
+                {
+                    tpt.x += tres.second.x;
+                    tpt.y += tres.second.y;
+                }
+                else {
+                    nfail++;
+                }
+            }
+
+            //for (auto pt : contour) {
+            //    auto npt = pt;
+            //    //npt.x += rpt.x;
+            //    //npt.y += rpt.y;
+
+            //    auto tres = ConvertFlowPoint(flow, pt);
+            //    if (tres.first)
+            //    {
+            //        npt.x += tres.second.x;
+            //        npt.y += tres.second.y;
+            //    }
+            //    else {
+            //        nfail++;
+            //    }
+            //    pCurr->contour.push_back(npt);
+            //}
+            std::cout << "raft fail test = " << nfail << " " << pts.size() << std::endl << std::endl;
             return false;
         }
         else

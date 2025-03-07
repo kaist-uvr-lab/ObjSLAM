@@ -3,11 +3,74 @@
 #include <Utils_Geometry.h>
 #include <Frame.h>
 #include <KeyFrame.h>
+#include <FrameInstance.h>
 #include <ObjectMatchingInfo.h>
 
 namespace ObjectSLAM {
 
 	const  int ObjectMatcher::HISTO_LENGTH = 30;
+
+	int ObjectMatcher::SearchInstance(const cv::Mat& desc1, const cv::Mat& desc2
+		, std::vector<std::pair<int, int>>& vecMatches, const int thdist, const float thratio)
+	{
+		int nmatches = 0;
+		int N1 = desc1.rows;
+		int N2 = desc2.rows;
+
+		std::vector<int> vMatchedDistance(N2, INT_MAX);
+		std::vector<int> vMatched1(N1, -1);
+		std::vector<int> vMatched2(N2, -1);
+
+		for (int i1 = 0; i1 < N1; i1++)
+		{
+			cv::Mat d1 = desc1.row(i1);
+			int bestDist = INT_MAX;
+			int bestDist2 = INT_MAX;
+			int bestIdx = -1;
+
+			for (int i2 = 0; i2 < N2; i2++)
+			{
+				cv::Mat d2 = desc2.row(i2);
+
+				int dist = (int)Utils::CalcBinaryDescriptor(d1, d2);
+
+				if (vMatchedDistance[i2] <= dist)
+					continue;
+
+				if (dist < bestDist)
+				{
+					bestDist2 = bestDist;
+					bestDist = dist;
+					bestIdx = i2;
+				}
+				else if (dist < bestDist2)
+				{
+					bestDist2 = dist;
+				}
+			}
+			if (bestDist <= thdist)
+			{
+				if (bestDist < (float)bestDist2 * thratio)
+				{
+					if (vMatched2[bestIdx] >= 0) {
+						nmatches--;
+						vMatched1[vMatched2[bestIdx]] = -1;
+					}
+					vMatched1[i1] = bestIdx;
+					vMatched2[bestIdx] = i1;
+					nmatches++;
+				}
+			}
+
+		}
+		for (size_t i1 = 0, iend1 = vMatched1.size(); i1 < iend1; i1++) {
+			if (vMatched1[i1] >= 0) {
+				int i2 = vMatched1[i1];
+				vecMatches.push_back(std::make_pair(i1, i2));
+			}
+		}
+		return vecMatches.size();
+	}
 
 	int ObjectMatcher::SearchInstance(EdgeSLAM::Frame* pTarget, BoxFrame* pRef, const cv::Mat& gray1, const cv::Mat& gray2, ObjectMatchingInfo* pMatches) {
 
@@ -278,6 +341,69 @@ namespace ObjectSLAM {
 			res++;
 		}
 		return res;
+	}
+
+	int ObjectMatcher::SearchInsAndIns(FrameInstance* pF1, FrameInstance* pF2, std::vector<std::pair<int, int>>& vecMatches, const int thdist, const float thratio, bool bCheckOri) {
+		int nmatches = 0;
+		int N1 = pF1->mvKeys.size();
+		int N2 = pF1->mvKeys.size();
+
+		std::vector<int> vMatchedDistance(N2, INT_MAX);
+		std::vector<int> vMatched1(N1, -1);
+		std::vector<int> vMatched2(N2, -1);
+
+		for (int i1 = 0; i1 < N1; i1++)
+		{
+			auto kp1 = pF1->mvKeys[i1];
+			int level1 = kp1.octave;
+
+			cv::Mat d1 = pF1->mDescriptor.row(i1);
+			int bestDist = INT_MAX;
+			int bestDist2 = INT_MAX;
+			int bestIdx = -1;
+
+			for (int i2 = 0; i2 < N2; i2++)
+			{
+				cv::Mat d2 = pF2->mDescriptor.row(i2);
+
+				int dist = (int)Utils::CalcBinaryDescriptor(d1, d2);
+
+				if (vMatchedDistance[i2] <= dist)
+					continue;
+
+				if (dist < bestDist)
+				{
+					bestDist2 = bestDist;
+					bestDist = dist;
+					bestIdx = i2;
+				}
+				else if (dist < bestDist2)
+				{
+					bestDist2 = dist;
+				}
+			}
+			if (bestDist <= thdist)
+			{
+				if (bestDist < (float)bestDist2 * thratio)
+				{
+					if (vMatched2[bestIdx] >= 0) {
+						nmatches--;
+						vMatched1[vMatched2[bestIdx]] = -1;
+					}
+					vMatched1[i1] = bestIdx;
+					vMatched2[bestIdx] = i1;
+					nmatches++;
+				}
+			}
+
+		}
+		for (size_t i1 = 0, iend1 = vMatched1.size(); i1 < iend1; i1++) {
+			if (vMatched1[i1] >= 0) {
+				int i2 = vMatched1[i1];
+				vecMatches.push_back(std::make_pair(i1, i2));
+			}
+		}
+		return vecMatches.size();
 	}
 
 	int ObjectMatcher::SearchFrameAndFrame(BoxFrame* pF1, BoxFrame* pF2, std::vector<std::pair<int, int>>& vecMatches, const float thRadius, const int thdist, const float thratio, bool bCheckOri) {
