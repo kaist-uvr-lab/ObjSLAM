@@ -31,6 +31,7 @@ namespace ObjectSLAM {
 	class SegInstance;
 	class GlobalInstance;
 	class FrameInstance;
+	class AssoFramePairData;
 	
 	namespace GOMAP {
 		class GaussianObject;
@@ -185,6 +186,10 @@ namespace ObjectSLAM {
 		BaseSLAM::BaseDevice* mpDevice;
 		EdgeSLAM::KeyFrame* mpRefKF;
 		BoxFrame* mpPrevBF;
+
+		//from은 fromid 기록. 현재 프레임은 toFrame임.
+		//toasso는 toid를 기록. 현재 프레임이 fromframe임. 
+		ConcurrentMap<int, AssoFramePairData*> FromAsso, ToAsso;
 
 		ConcurrentMap<std::string, InstanceMask*> mapMasks;
 

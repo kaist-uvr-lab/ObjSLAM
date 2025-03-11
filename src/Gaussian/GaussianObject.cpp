@@ -15,8 +15,17 @@ namespace ObjectSLAM {
 		GaussianObject::GaussianObject(const cv::Mat& _pos, const cv::Mat& _cov, const cv::Mat& _R)
 			:mean(_pos), covariance(_cov), Rwo(_R), nObs(0), nContour(0), nSeg(0), id(++GaussianObject::mnNextId){
 		}
+        cv::RotatedRect GO2D::CalcEllipse(float chisq)
+        {
+            float x = this->center.at<float>(0);
+            float y = this->center.at<float>(1);
 
-        void GO2D::GetRect(float chisq) {
+            float major_axis = this->major * chisq;
+            float minor_axis = this->minor * chisq;
+            
+            return cv::RotatedRect(cv::Point(x, y),cv::Size(cvRound(major_axis), cvRound(minor_axis)), this->angle_deg);
+        }
+        cv::Rect GO2D::CalcRect(float chisq) {
             float x = this->center.at<float>(0);
             float y = this->center.at<float>(1);
             float major_axis = this->major * chisq;
@@ -41,12 +50,13 @@ namespace ObjectSLAM {
             float x1 = x - width / 2;
             float y1 = y - height / 2;
 
-            rect = cv::Rect(
+            auto rrect = cv::Rect(
                 static_cast<int>(x1),
                 static_cast<int>(y1),
                 static_cast<int>(width),
                 static_cast<int>(height)
             );
+            return rrect;
         }
 
         void GaussianObject::SetPosition(const cv::Mat& _pos) {

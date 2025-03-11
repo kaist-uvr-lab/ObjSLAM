@@ -30,7 +30,8 @@ namespace ObjectSLAM {
 			float major, minor, angle_rad, angle_deg;
 			cv::Size axes; //angle_deg¿Í cv::ellipse°¡´É
 
-			void GetRect(float chisq = 1.0);
+			cv::RotatedRect CalcEllipse(float chisq = 1.0);
+			cv::Rect CalcRect(float chisq = 1.0);
 
 			float CalcIOU(GO2D& other) {
 				cv::Rect intersection = this->rect & other.rect;
