@@ -25,6 +25,8 @@ namespace ObjectSLAM {
 		virtual ~FrameInstance() {}
 
 	public:
+		FrameInstance* ConvertedInstasnce(EdgeSLAM::KeyFrame* pKF, cv::Point2f pt);
+	public:
 		//matching 정보가 포함되어야 함.
 		//포즈 최적화를 위해
 		EdgeSLAM::KeyFrame* mpRefKF;

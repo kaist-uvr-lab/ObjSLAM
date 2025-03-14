@@ -97,7 +97,7 @@ namespace ObjectSLAM {
 				int its[4] = { 10,10,10,10 };
 
 				int nBad = 0;
-				for (size_t it = 0; it < 4; it++)
+				for (size_t it = 0; it < 1; it++)
 				{
 					//아웃라이어 관리 안함
 					vPoint->setEstimate(EdgeSLAM::Converter::toVector3d(pos));

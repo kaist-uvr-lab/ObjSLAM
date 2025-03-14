@@ -72,6 +72,134 @@ namespace ObjectSLAM {
 		return vecMatches.size();
 	}
 
+
+	bool ObjectMatcher::removeOutliersWithMovementStatistics(
+		const std::vector<cv::KeyPoint>& keypointsA,
+		const std::vector<cv::KeyPoint>& keypointsB,
+		const std::vector<std::pair<int, int>>& matches,
+		std::vector<std::pair<int, int>>& filteredMatches,
+		float stdDevThreshold) {
+
+		if (matches.size() < 3) {
+			return false; // 통계적 의미를 갖기에 데이터가 너무 적음
+		}
+
+		// 이동 벡터 계산
+		std::vector<cv::Point2f> movements;
+		for (const auto& match : matches) {
+			cv::Point2f ptA = keypointsA[match.first].pt;
+			cv::Point2f ptB = keypointsB[match.second].pt;
+			movements.push_back(ptB - ptA);
+		}
+
+		// 이동 벡터의 x, y 평균 및 표준편차 계산
+		cv::Point2f meanMovement(0, 0);
+		for (const auto& m : movements) {
+			meanMovement += m;
+		}
+		meanMovement *= 1.0f / movements.size();
+
+		float sumSquaredX = 0, sumSquaredY = 0;
+		for (const auto& m : movements) {
+			float dx = m.x - meanMovement.x;
+			float dy = m.y - meanMovement.y;
+			sumSquaredX += dx * dx;
+			sumSquaredY += dy * dy;
+		}
+
+		float stdDevX = std::sqrt(sumSquaredX / movements.size());
+		float stdDevY = std::sqrt(sumSquaredY / movements.size());
+
+		// 표준편차의 배수 내에 있는 매칭만 유지
+		for (size_t i = 0; i < movements.size(); i++) {
+			float dx = std::abs(movements[i].x - meanMovement.x);
+			float dy = std::abs(movements[i].y - meanMovement.y);
+
+			if (dx <= stdDevThreshold * stdDevX && dy <= stdDevThreshold * stdDevY) {
+				filteredMatches.push_back(matches[i]);
+			}
+		}
+
+		return true;
+	}
+
+	bool ObjectMatcher::removeOutliersWithMahalanobis(
+		const std::vector<cv::KeyPoint>& keypointsA,
+		const std::vector<cv::KeyPoint>& keypointsB,
+		const std::vector<std::pair<int, int>>& matches,
+		std::vector<std::pair<int, int>>& filteredMatches,
+		float threshold) { // 2-DOF 카이제곱 분포에서 p=0.05에 대한 임계값
+
+		if (matches.size() < 3) {
+			return false;
+		}
+
+		// 이동 벡터 계산
+		std::vector<cv::Point2f> movements;
+		for (const auto& match : matches) {
+			cv::Point2f ptA = keypointsA[match.first].pt;
+			cv::Point2f ptB = keypointsB[match.second].pt;
+			movements.push_back(ptB - ptA);
+		}
+
+		// 평균 이동 벡터
+		cv::Point2f mean(0, 0);
+		for (const auto& m : movements) {
+			mean += m;
+		}
+		mean *= 1.0f / movements.size();
+
+		// 공분산 행렬 계산
+		float covXX = 0, covXY = 0, covYY = 0;
+		for (const auto& m : movements) {
+			float dx = m.x - mean.x;
+			float dy = m.y - mean.y;
+			covXX += dx * dx;
+			covXY += dx * dy;
+			covYY += dy * dy;
+		}
+		covXX /= movements.size();
+		covXY /= movements.size();
+		covYY /= movements.size();
+
+		// 공분산 행렬의 역행렬 계산
+		float det = covXX * covYY - covXY * covXY;
+		if (std::abs(det) < 1e-10) {
+			// 행렬이 특이하면 기본 방법으로 대체
+			return removeOutliersWithMovementStatistics(keypointsA, keypointsB, matches, filteredMatches);
+		}
+
+		float invCovXX = covYY / det;
+		float invCovXY = -covXY / det;
+		float invCovYY = covXX / det;
+
+		// 마할라노비스 거리 계산 및 필터링
+		for (size_t i = 0; i < movements.size(); i++) {
+			float dx = movements[i].x - mean.x;
+			float dy = movements[i].y - mean.y;
+
+			// 마할라노비스 거리의 제곱
+			float mahaDist = dx * dx * invCovXX + 2 * dx * dy * invCovXY + dy * dy * invCovYY;
+
+			if (mahaDist <= threshold) {
+				filteredMatches.push_back(matches[i]);
+			}
+		}
+
+		return true;
+	}
+
+
+	/// <summary>
+	/// ////////////////////////////////////////////////////////////
+	/// </summary>
+	/// <param name="pTarget"></param>
+	/// <param name="pRef"></param>
+	/// <param name="gray1"></param>
+	/// <param name="gray2"></param>
+	/// <param name="pMatches"></param>
+	/// <returns></returns>
+
 	int ObjectMatcher::SearchInstance(EdgeSLAM::Frame* pTarget, BoxFrame* pRef, const cv::Mat& gray1, const cv::Mat& gray2, ObjectMatchingInfo* pMatches) {
 
 		auto pSeg = pRef->mapMasks.Get("yoloseg");

@@ -17,13 +17,10 @@ namespace ObjectSLAM {
 		}
         cv::RotatedRect GO2D::CalcEllipse(float chisq)
         {
-            float x = this->center.at<float>(0);
-            float y = this->center.at<float>(1);
-
-            float major_axis = this->major * chisq;
-            float minor_axis = this->minor * chisq;
-            
-            return cv::RotatedRect(cv::Point(x, y),cv::Size(cvRound(major_axis), cvRound(minor_axis)), this->angle_deg);
+            //rotated rect는 major의 지름으로 표현이 되기 때문에 반지름으로 그리려면 2배를 함.
+            float major_axis = this->major * chisq * 2;
+            float minor_axis = this->minor * chisq * 2;
+            return cv::RotatedRect(cv::Point(this->center),cv::Size(cvRound(major_axis), cvRound(minor_axis)), this->angle_deg);
         }
         cv::Rect GO2D::CalcRect(float chisq) {
             float x = this->center.at<float>(0);

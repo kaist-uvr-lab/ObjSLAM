@@ -23,6 +23,7 @@ namespace ObjectSLAM {
 	class GlobalInstance;
 	class AssoMatchRes;
 	class AssoFramePairData;
+	class ObjectRegionFeatures;
 
 	namespace GOMAP {
 		class GaussianObject;
@@ -54,6 +55,9 @@ namespace ObjectSLAM {
 			, BoxFrame* pNewBF, InstanceMask* pCurrSegMask
 			, std::map<int, FrameInstance*>& mapSamInstances, bool bShow = true);
 		
+		//iou 체크
+		static float CalculateIOU(const cv::Mat& mask1, const cv::Mat& mask2, float area1, int id = 1);
+
 	private:
 		//라프트 정보를 이용해서 source 프레임의 마스크를 변환
 		static void ConvertMaskWithRAFT(const std::map<int, FrameInstance*>& mapSourceInstance, std::map<int, FrameInstance*>& mapRaftInstance, EdgeSLAM::KeyFrame* pRefKF, const cv::Mat& flow);
@@ -61,7 +65,14 @@ namespace ObjectSLAM {
 		//새로운 어소시에이션. 모든 어소시에이션을 수행함. 
 		static void CalculateIOU(const std::map<int, FrameInstance*>& mapPrevInstance, const std::map<int, FrameInstance*>& mapCurrInstance
 			, std::map<std::pair<int,int>, AssoMatchRes*>& mapIOU, float th = 0.5);
+		
 		static void EvaluateMatchResults(std::map<std::pair<int,int>, AssoMatchRes*>& mapIOU, std::map<std::pair<int,int>, AssoMatchRes*>& mapSuccess, float th = 0.5);
+
+		//맵의 불확싱성을 위한 연결
+		static void AssociationWithUncertainty(AssoFramePairData* pPairData);
+		static FrameInstance* GenerateFrameInsWithUncertainty(
+			EdgeSLAM::KeyFrame* pKF, const ObjectRegionFeatures& prev, const ObjectRegionFeatures& map, 
+			const std::vector<std::pair<int, int>>& vecMatches);
 
 		//ClassifyMatchResults
 
@@ -87,7 +98,7 @@ namespace ObjectSLAM {
 
 		//시각화
 		//매치와 인스턴스, 맵 출력을 분리
-		static void VisualizeAssociation(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData, std::string mapName, int num_vis = 0);
+		static void VisualizeAssociation(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData, std::string mapName, int num_vis = 0, int type = 0);
 		
 		static void VisualizeInstance(const std::map<int, GOMAP::GaussianObject*>& pMAP, std::map<int, FrameInstance*>& pPrev, const std::map<int, FrameInstance*>& pCurr, cv::Mat& vimg);
 		static void VisualizeInstance(const std::map<int, FrameInstance*>& pPrev, const std::map<int, FrameInstance*>& pCurr, cv::Mat& vimg);
@@ -113,6 +124,7 @@ namespace ObjectSLAM {
 		static bool CheckOverlap(const cv::Rect& rect1, const cv::Rect& rect2);
 		static bool IsContain(const cv::Rect& rect1, const cv::Rect& rect2);
 		//KP or MP 매칭 관련
+		static void ExtractRegionFeatures(EdgeSLAM::KeyFrame* pKF, const cv::RotatedRect& rect, std::vector<cv::KeyPoint>& vecKPs, cv::Mat& desc);
 		static void ExtractRegionFeatures(EdgeSLAM::KeyFrame* pKF, const cv::Rect& rect, std::vector<cv::KeyPoint>& vecKPs, cv::Mat& desc);
 
 		////LocalMaps

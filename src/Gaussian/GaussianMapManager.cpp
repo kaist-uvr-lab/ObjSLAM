@@ -250,7 +250,7 @@ namespace ObjectSLAM {
 
 			cov.at<float>(0, 0) += x * x;
 			cov.at<float>(1, 1) += y * y;
-			cov.at<float>(2, 2) += z * z;
+			//cov.at<float>(2, 2) += z * z;
 
 		}
 		cov = depth*depth * Row *Rwc * cov * Rcw * Rwo;

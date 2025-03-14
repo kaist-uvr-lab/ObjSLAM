@@ -10,10 +10,14 @@
 #include <ConcurrentVector.h>
 
 namespace ObjectSLAM {
+	/*namespace GOMAP {
+		class GaussianObject;
+	}*/
 	class FrameInstance;
 	class InstanceMask;
 
 	namespace GOMAP {
+		
 		class GO2D {
 		public:
 			GO2D(){}
@@ -33,14 +37,20 @@ namespace ObjectSLAM {
 			cv::RotatedRect CalcEllipse(float chisq = 1.0);
 			cv::Rect CalcRect(float chisq = 1.0);
 
-			float CalcIOU(GO2D& other) {
-				cv::Rect intersection = this->rect & other.rect;
+			float CalcIOU(cv::Rect other) {
+				cv::RotatedRect a;
+				
+				cv::Rect intersection = this->rect & other;
 				if (intersection.empty()) return 0.0;
 
 				float intersection_area = intersection.area();
-				float union_area = this->rect.area() + other.rect.area() - intersection_area;
+				float union_area = this->rect.area() + other.area() - intersection_area;
 
 				return intersection_area / union_area;
+			}
+
+			float CalcIOU(GO2D& other) {
+				return CalcIOU(other.rect);
 			}
 		};
 		class GaussianObject {

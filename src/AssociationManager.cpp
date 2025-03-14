@@ -13,7 +13,8 @@
 #include <ObjectSLAM.h>
 #include <ObjectMatcher.h>
 #include <InstanceLinker.h>
-#include <AssoFramePairData.h>
+#include <AssoFramePairData.h> 
+#include <ObjectRegionFeatures.h>
 
 //가우시안 객체 맵
 #include <Gaussian/GaussianObject.h>
@@ -23,19 +24,50 @@
 
 namespace ObjectSLAM {
 	
-	void AssociationManager::AssociationWithSeg(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, 
+	
+
+	
+	
+	float sign(const cv::Point2f& p1, const cv::Point2f& p2, const cv::Point2f& p3) {
+		return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+	}
+	bool pointInTriangle(const cv::Point2f& pt, const cv::Point2f& v1,
+		const cv::Point2f& v2, const cv::Point2f& v3) {
+		// 외적을 이용한 방법
+		float d1 = sign(pt, v1, v2);
+		float d2 = sign(pt, v2, v3);
+		float d3 = sign(pt, v3, v1);
+
+		bool has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+		bool has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+		// 부호가 모두 같으면 삼각형 내부에 있음
+		return !(has_neg && has_pos);
+	}
+	bool isPointInRotatedRect(const cv::Point2f& point, const cv::RotatedRect& rect) {
+		// 회전된 사각형의 꼭지점 4개 얻기
+		cv::Point2f vertices[4];
+		rect.points(vertices);
+
+		// 점이 4개의 삼각형 안에 있는지 확인
+		// 사각형을 두 개의 삼각형으로 나누어 확인
+		return (pointInTriangle(point, vertices[0], vertices[1], vertices[2]) ||
+			pointInTriangle(point, vertices[0], vertices[2], vertices[3]));
+	}
+
+	void AssociationManager::AssociationWithSeg(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM,
 		const std::string& key, const std::string& mapName, const std::string& userName, AssoFramePairData* pPairData)
 	{
 
 		auto pPrevBF = pPairData->mpFrom;
-		auto pNewBF  = pPairData->mpTo;
+		auto pNewBF = pPairData->mpTo;
 
 		auto pCurrKF = pNewBF->mpRefKF;
 		auto pPrevKF = pPrevBF->mpRefKF;
 
 		auto pCurrSegMask = pNewBF->mapMasks.Get("yoloseg");
 		auto pPrevSegMask = pPrevBF->mapMasks.Get("yoloseg");
-				
+
 		auto pCurrSegInstance = pCurrSegMask->FrameInstances.Get();
 		auto pPrevSegInstance = pPrevSegMask->FrameInstances.Get();
 
@@ -98,7 +130,7 @@ namespace ObjectSLAM {
 				else {
 					ares->res = true;
 					ares->req = false;
-					
+
 					pPairData->mapRaftSeg[pid] = cid;
 					/*pNewMask->FrameInstances.Update(pid, pPrevIns);
 					pNewMask->GaussianMaps.Update(pid, pPrevGO);
@@ -155,61 +187,169 @@ namespace ObjectSLAM {
 		}
 
 		//check sam request
+		std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+		AssociationWithUncertainty(pPairData);
 
 		//update gaussian object
 		//기존 마스크에 추가된 내용에 대해서만 갱신
 		//prev와 curr이어야 함. raft는 안됨.
+
+		std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+
 		UpdateGaussianObjectMap(pPairData->mapRaftSeg, pPrevSegMask, pCurrSegMask, InstanceType::SEG);
 
+		std::chrono::high_resolution_clock::time_point t3 = std::chrono::high_resolution_clock::now();
+		auto du_u = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+		auto du_o = std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count();
+
+		std::cout << "test = " << du_u << " " << du_o << std::endl;
+
+		////리커버리 전략
 		//from에서 연결 안된 영역
 		//1) from rect안에서
 		cv::Mat cimg = pNewBF->img.clone();
 		cv::Mat pimg = pPrevBF->img.clone();
-		std::vector<std::pair<cv::Point2f, cv::Point2f>> vecMatch;
-		std::map<int, GOMAP::GaussianObject*> mapFailedGOs;
-		std::map<int, GOMAP::GO2D> mapFailedGO2D;
-		std::map<int, FrameInstance*> mapFailedPrevIns, mapFailedCurrIns;
-		std::map<int, std::vector<cv::KeyPoint>> mapFailedPrevKP, mapFailedCurrKP, mapFailedMapKP;
-		std::map<int, cv::Mat> mapFailedPrevDesc, mapFailedCurrDesc, mapFailedMapDesc;
-		for (auto pid : pPairData->setSegFromFailed)
-		{
-			auto pG = pPrevSegMask->GaussianMaps.Get(pid);
-			if (pG){
-				mapFailedGOs[pid] = pG;
-				ExtractRegionFeatures(pPrevKF, pPrevSegInstance[pid]->rect, mapFailedPrevKP[pid], mapFailedPrevDesc[pid]);
-				cv::rectangle(pimg, pPrevSegInstance[pid]->rect, cv::Scalar(255), 2);
-			}
-		}
-		float chi = sqrt(5.991);
-		GetObjectMap2Ds(mapFailedGOs, pNewBF, mapFailedGO2D);
-		for (auto pair : mapFailedGO2D)
-		{
-			auto pid = pair.first;
-			auto p = pair.second;
-			p.rect = p.CalcRect(chi);
-			auto _ellipse = p.CalcEllipse(chi);
-			auto _ellipse2 = p.CalcEllipse();
-			ExtractRegionFeatures(pCurrKF, p.rect, mapFailedMapKP[pid], mapFailedMapDesc[pid]);
-			cv::rectangle(cimg, p.rect, cv::Scalar(255,255,0), 2);
-			cv::ellipse(cimg, _ellipse, cv::Scalar(255, 255, 0), 2);
-			cv::ellipse(cimg, _ellipse2, cv::Scalar(0, 255, 255), 2);
-		}
-		for (auto cid : pPairData->setSegToFailed)
-		{
-			mapFailedCurrIns[cid] = pCurrSegInstance[cid];
-			ExtractRegionFeatures(pCurrKF, pCurrSegInstance[cid]->rect, mapFailedCurrKP[cid], mapFailedCurrDesc[cid]);
-			cv::rectangle(cimg, pCurrSegInstance[cid]->rect, cv::Scalar(255), 2);
-		}
+
+		std::vector<std::pair<cv::Point2f, cv::Point2f>> vecMatch, vecMatch2;
+		//std::map<int, GOMAP::GaussianObject*> mapFailedGOs;
+		//std::map<int, FrameInstance*> mapFailedPrevIns, mapFailedCurrIns;
+		//std::map<int, GOMAP::GO2D> mapFailedGO2D;
+		//
+		//std::map<int, std::vector<cv::KeyPoint>> mapFailedPrevKP, mapFailedCurrKP, mapFailedMapKP;
+		//std::map<int, cv::Mat> mapFailedPrevDesc, mapFailedCurrDesc, mapFailedMapDesc;
+		//std::map<int, cv::Mat> mapMaskMap, mapMaskCurr;
+		//for (auto pid : pPairData->setSegFromFailed)
+		//{
+		//	auto pG = pPrevSegMask->GaussianMaps.Get(pid);
+		//	if (pG){
+		//		mapFailedGOs[pid] = pG;
+		//		mapFailedPrevIns[pid] = pPrevSegInstance[pid];
+		//		ExtractRegionFeatures(pPrevKF, pPrevSegInstance[pid]->rect, mapFailedPrevKP[pid], mapFailedPrevDesc[pid]);
+		//		cv::rectangle(pimg, pPrevSegInstance[pid]->rect, cv::Scalar(255), 2);
+		//	}
+		//}
+		//float chi = sqrt(5.991);
+		//GetObjectMap2Ds(mapFailedGOs, pNewBF, mapFailedGO2D);
+		//for (auto pair : mapFailedGO2D)
+		//{
+		//	auto pid = pair.first;
+		//	auto p = pair.second;
+		//	
+		//	//p.rect = p.CalcRect(chi);
+		//	auto _ellipse = p.CalcEllipse(chi);
+		//	p.rect = _ellipse.boundingRect();
+		//	ExtractRegionFeatures(pCurrKF, _ellipse, mapFailedMapKP[pid], mapFailedMapDesc[pid]);
+		//	
+		//	//cv::ellipse(cimg, cv::Point2f(p.center), cv::Size(cvRound(p.major* chi), cvRound(p.minor* chi)), p.angle_deg, 0, 360, cv::Scalar(0, 0, 255), 2);
+		//	cv::Mat a = cv::Mat::zeros(cimg.size(), CV_8UC1);
+		//	cv::ellipse(a, _ellipse, cv::Scalar(255), -1);
+		//	cv::ellipse(cimg, _ellipse, cv::Scalar(0,0,255), 3);
+		//	mapMaskMap[pid] = a;
+		//}
+		//for (auto cid : pPairData->setSegToFailed)
+		//{
+		//	mapFailedCurrIns[cid] = pCurrSegInstance[cid];
+		//	ExtractRegionFeatures(pCurrKF, pCurrSegInstance[cid]->rect, mapFailedCurrKP[cid], mapFailedCurrDesc[cid]);
+		//	cv::rectangle(cimg, pCurrSegInstance[cid]->rect, cv::Scalar(255), 2);
+		//}
+		//
+		////불확실성과 현재 rect 체크 후 포인트 매칭
+		//for (auto pair : mapFailedGO2D)
+		//{
+		//	auto pid = pair.first;
+		//	auto p = pair.second;
+		//	std::vector<std::pair<int, int>> vecMatches, vecFilteredMatches, vecResMatches;
+		//	ObjectMatcher::SearchInstance(mapFailedPrevDesc[pid], mapFailedMapDesc[pid], vecMatches);
+		//	bool bNew = ObjectMatcher::removeOutliersWithMahalanobis(mapFailedPrevKP[pid], mapFailedMapKP[pid], vecMatches, vecFilteredMatches);
+		//	if (bNew){
+		//		//특징점 매칭 후 새로운 인스턴스 생성까지(rect, mask, contour)
+		//		auto pIns = mapFailedPrevIns[pid];
+		//		vecResMatches = vecFilteredMatches;
+
+		//		std::vector<cv::Point2f> pointsA, pointsB;
+		//		for (const auto& match : vecFilteredMatches) {
+		//			pointsB.push_back(mapFailedMapKP[pid][match.second].pt);
+		//			pointsA.push_back(mapFailedPrevKP[pid][match.first].pt);
+		//		}
+		//		cv::Scalar meanA = cv::mean(pointsA);
+		//		cv::Scalar meanB = cv::mean(pointsB);
+		//		
+		//		auto rectA = mapFailedPrevIns[pid]->rect;
+		//		cv::Point2f displacement(meanB[0]-meanA[0], meanB[1] - meanA[1]);
+
+		//		cv::Rect rectB(rectA.x+ displacement.x, rectA.y+ displacement.y,
+		//			rectA.width, rectA.height);
+		//		cv::rectangle(cimg, rectB, cv::Scalar(0,255,0), 2);
+
+		//		//raft와 같은 새로운 인스턴스 만들고 실패 인스턴스와 비교
+		//		auto pNewIns = pIns->ConvertedInstasnce(pCurrKF, displacement);
+
+		//		{
+		//			std::vector<std::vector<cv::Point >> contours;
+		//			contours.push_back(pNewIns->contour);
+		//			cv::drawContours(cimg, contours, 0, cv::Scalar(0, 255, 0), 2);
+		//		}
+		//		//특징점 매칭 후 새로운 인스턴스 생성까지
+
+		//		for (auto pair2 : mapFailedCurrIns)
+		//		{
+		//			auto cins = pair2.second;
+		//			float iou = CalculateIOU(pNewIns->mask, cins->mask, pNewIns->area, 1);
+		//			if (iou > 0.5)
+		//			{
+		//				std::vector<std::vector<cv::Point >> contours;
+		//				contours.push_back(pNewIns->contour);
+		//				cv::drawContours(cimg, contours, 0, cv::Scalar(0, 0, 255), 2);
+		//			}
+		//			std::cout << iou << std::endl;
+		//		}
+		//	}
+		//	else
+		//		vecResMatches = vecMatches;
+
+		//	float area = cv::countNonZero(mapMaskMap[pid]);
+
+		//	//for (auto pair2 : vecResMatches)
+		//	//{
+		//	//	auto pt1 = mapFailedPrevKP[pid][pair2.first].pt;
+		//	//	auto pt2 = mapFailedMapKP[pid][pair2.second].pt;
+		//	//	vecMatch.push_back(std::make_pair(pt1, pt2));
+		//	//	//이걸 바탕으로 마스크의 상대적 위치 변화 가능할까?
+		//	//	//평균
+		//	//}
+		//	//for (auto pair2 : mapFailedCurrIns)
+		//	//{
+		//	//	auto cins = pair2.second;
+		//	//	
+		//	//	auto iou = CalculateIOU(mapMaskMap[pid], cins->mask, area, 0);
+		//	//	std::cout << iou << std::endl;
+		//	//	if (iou > 0.5)
+		//	//	{
+		//	//		std::vector<std::vector<cv::Point >> contours;
+		//	//		contours.push_back(cins->contour);
+		//	//		cv::drawContours(cimg, contours, 0, cv::Scalar(0, 0, 255), 2);
+		//	//		//cv::circle(cimg, cins->pt, 10, cv::Scalar(0, 0, 255), -1);
+		//	//	}
+		//	//	/*float iou = p.CalcIOU(cins->rect);
+		//	//	if (iou > 0.7)
+		//	//	{  
+		//	//		cv::circle(cimg, cins->pt, 5, cv::Scalar(0, 0, 255), -1);
+		//	//	}
+		//	//	if (IsContain(p.rect, cins->rect))
+		//	//	{
+		//	//		cv::circle(cimg, cins->pt, 5, cv::Scalar(0, 0, 255), -1);
+		//	//	}*/
+		//	//}
+		//}
+		////리커버리 전략
 		
-		//불확실성과 현재 rect 체크 후 포인트 매칭
-
-
 		//2) to의 불확실성 안에서
 		//to에서 연결 안된 영역
 		//1) to의 rect 안에서
 		cv::Mat resImage;
 		SLAM->VisualizeMatchingImage(resImage, pimg, cimg, vecMatch, mapName, 0, cv::Scalar(0, 255, 255));
 		VisualizeAssociation(SLAM, pPairData, mapName, 2);
+
 	}
 
 	void AssociationManager::AssociationWithSAM(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key
@@ -297,13 +437,100 @@ namespace ObjectSLAM {
 		}
 
 		UpdateGaussianObjectMap(pPairData->mapRaftSam, pPrevSegMask, pCurrSegMask, InstanceType::SEG);
-		VisualizeAssociation(SLAM, pPairData, mapName, 2);
+		VisualizeAssociation(SLAM, pPairData, mapName, 2, 1);
+
 	}
 
-	void AssociationManager::VisualizeAssociation(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData, std::string mapName, int num_vis) {
+	void AssociationManager::AssociationWithUncertainty(AssoFramePairData* pPairData) {
+		float chi = sqrt(5.991);
+
+		auto pPrevBF = pPairData->mpFrom;
+		auto pCurrBF = pPairData->mpTo;
+
+		auto pPrevKF = pPrevBF->mpRefKF;
+		auto pCurrKF = pCurrBF->mpRefKF;
+		
+		auto pPrevSegMask = pPrevBF->mapMasks.Get("yoloseg");
+		auto pCurrSegMask = pCurrBF->mapMasks.Get("yoloseg");
+
+		const cv::Mat Kc = pCurrKF->K.clone();
+		const cv::Mat Tc = pCurrKF->GetPose();
+		const cv::Mat Rc = Tc.rowRange(0, 3).colRange(0, 3);
+		const cv::Mat tc = Tc.rowRange(0, 3).col(3);
+
+		int w = pCurrKF->mpCamera->mnWidth;
+		int h = pCurrKF->mpCamera->mnHeight;
+
+		std::map<int, FrameInstance*> mapFailedCurrIns;
+		for (auto cid : pPairData->setSegToFailed)
+		{
+			mapFailedCurrIns[cid] = pCurrSegMask->FrameInstances.Get(cid);
+		}
+
+		for (auto pid : pPairData->setSegFromFailed)
+		{
+			auto pG = pPrevSegMask->GaussianMaps.Get(pid);
+			if (pG) {
+				auto pins = pPrevSegMask->FrameInstances.Get(pid);
+				ObjectRegionFeatures porf(nullptr, pins);
+				porf.rect = porf.mpRefIns->rect;
+				ExtractRegionFeatures(pPrevKF, porf.rect, porf.keypoints, porf.descriptors);
+
+				ObjectRegionFeatures morf(pG, pins);
+				morf.map2D = morf.mpRefMap->Project2D(Kc, Rc, tc);
+				morf.region = morf.map2D.CalcEllipse(chi);
+				morf.rect = morf.region.boundingRect();
+				ExtractRegionFeatures(pCurrKF, morf.region, morf.keypoints, morf.descriptors);
+
+				//두 region feaeture 비교
+				std::vector<std::pair<int, int>> vecMatches, vecFilteredMatches, vecResMatches;
+				ObjectMatcher::SearchInstance(porf.descriptors, morf.descriptors, vecMatches);
+				bool bNew = ObjectMatcher::removeOutliersWithMahalanobis(porf.keypoints, morf.keypoints, vecMatches, vecFilteredMatches);
+
+				//새로운 인스턴스 생성.
+				//그 인스턴스를 새로운 프레임과 비교
+				if (bNew)
+				{
+					auto pUins = GenerateFrameInsWithUncertainty(pCurrKF, porf, morf, vecFilteredMatches);
+
+					for (auto pair2 : mapFailedCurrIns)
+					{
+						auto cins = pair2.second;
+						float iou = CalculateIOU(pUins->mask, cins->mask, pUins->area, 1);
+						if (iou > 0.5)
+						{
+							pPairData->mapRaftSeg[pid] = pair2.first;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	FrameInstance* AssociationManager::GenerateFrameInsWithUncertainty(EdgeSLAM::KeyFrame* pKF, const ObjectRegionFeatures& prev, const ObjectRegionFeatures& map, const std::vector<std::pair<int, int>>& vecMatches)
+	{
+
+		std::vector<cv::Point2f> pointsA, pointsB;
+		for (const auto& match : vecMatches) {
+			pointsA.push_back(prev.keypoints[match.first].pt);
+			pointsB.push_back(map.keypoints[match.second].pt);
+		}
+		cv::Scalar meanA = cv::mean(pointsA);
+		cv::Scalar meanB = cv::mean(pointsB);
+
+		auto rectA = prev.rect;
+		cv::Point2f displacement(meanB[0] - meanA[0], meanB[1] - meanA[1]);
+		
+		auto pNewIns = prev.mpRefIns->ConvertedInstasnce(pKF, displacement);
+		return pNewIns;
+
+	}
+
+	void AssociationManager::VisualizeAssociation(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData, std::string mapName, int num_vis, int type) {
 		
 		auto pPrevBF = pPairData->mpFrom;
 		auto pNewBF = pPairData->mpTo;
+
 		auto pPrevKF = pPrevBF->mpRefKF;
 		auto pCurrKF = pNewBF->mpRefKF;
 
@@ -374,7 +601,6 @@ namespace ObjectSLAM {
 			{
 				continue;
 			}
-
 			cv::rectangle(cColorImg, p->rect, c, thick);
 		}
 
@@ -436,35 +662,42 @@ namespace ObjectSLAM {
 			
 			GOMAP::GO2D g = pG->Project2D(Kp, Rp, tp);
 			g.rect = g.CalcRect();
+			auto _e = g.CalcEllipse();
 			auto pt2 = cv::Point(g.rect.x + g.rect.width / 2, g.rect.y + g.rect.height / 2);
 			cv::line(pColorImg, pt1, pt2, cv::Scalar(255, 0, 0), 3);
 			cv::rectangle(pColorImg, g.rect, cv::Scalar(255), 2);
-			//cv::Size newSize(cvRound(g.major * chi), cvRound(g.minor * chi));
-			//cv::ellipse(pColorImg, pt2, newSize, g.angle_deg, 0, 360, cv::Scalar(255, 255, 0), 3);
-			GaussianVisualizer::visualize2D(pColorImg, pG, Kp, Rp, tp, cv::Scalar(255, 0, 255), 1.0, -1);
+			cv::ellipse(pColorImg, _e, cv::Scalar(255, 0, 255), -1);
+			cv::putText(pColorImg, std::to_string(pG->id), _e.center, 2, 1.3, cv::Scalar(255, 0, 0), 2);
 		}
 		for (auto pair : mapCurrGO)
 		{
-			auto pG = pair.second;
-			if (!pG)
-				continue;
 			auto pIns = mapCurrIns[pair.first];
+			auto pG = pair.second;
+			if (!pG){
+				cv::rectangle(cColorImg, pIns->rect, cv::Scalar(0,0,0), 2);
+				continue;
+			}
 			auto pt1 = pIns->pt;
 
 			GOMAP::GO2D g = pG->Project2D(Kc, Rc, tc);
 			g.rect = g.CalcRect();
+			auto _e = g.CalcEllipse();
 			auto pt2 = cv::Point(g.rect.x + g.rect.width / 2, g.rect.y + g.rect.height / 2);
 			cv::line(cColorImg, pt1, pt2, cv::Scalar(255, 0, 0), 3);
 			cv::rectangle(cColorImg, g.rect, cv::Scalar(255), 2);
-			//cv::Size newSize(cvRound(g.major * chi), cvRound(g.minor * chi));
-			//cv::ellipse(cColorImg, pt2, newSize, g.angle_deg, 0, 360, cv::Scalar(255, 255, 0), 3);
-			GaussianVisualizer::visualize2D(cColorImg, pG, Kc, Rc, tc, cv::Scalar(255, 0, 255), 1.0, -1);
+			cv::ellipse(cColorImg, _e, cv::Scalar(255, 0, 255), -1);
+			cv::putText(cColorImg, std::to_string(pG->id), _e.center, 2, 1.3, cv::Scalar(255, 0, 0), 2);
 		}
 
 		//시각화
 		cv::Mat resImage;
 		SLAM->VisualizeMatchingImage(resImage, pColorImg, cColorImg, vecSegMatch, mapName, num_vis, cv::Scalar(0,255,255));
 		SLAM->VisualizeMatchingImage(resImage, vecSamMatch, mapName, num_vis, cv::Scalar(255,0,255));
+
+		std::stringstream ss;
+		ss.str("");
+		ss << "../res/asso/" << pPairData->toid <<"_"<<pPairData->fromid << "_" << type << ".png";
+		cv::imwrite(ss.str(), resImage);
 	}
 
 	/////
@@ -494,7 +727,27 @@ namespace ObjectSLAM {
 			}
 		}
 	}
+	float AssociationManager::CalculateIOU(const cv::Mat& mask1, const cv::Mat& mask2, float area1, int id) {
+		cv::Mat overlap = mask1 & mask2;
+		float nOverlap = (float)cv::countNonZero(overlap);
+		float iou = 0.0;
+		if (nOverlap == 0) {
+			
+		}
+		else {
+			if (id == 0) {
+				iou = nOverlap / area1;
+			}
+			if (id > 0)
+			{
+				cv::Mat total = mask1 | mask2;
+				float nUnion = (float)cv::countNonZero(total);
+				iou = nOverlap / nUnion;
+			}
+		}
+		return iou;
 
+	}
 	void AssociationManager::CalculateIOU(const std::map<int, FrameInstance*>& mapPrevInstance, const std::map<int, FrameInstance*>& mapCurrInstance
 		, std::map<std::pair<int, int>, AssoMatchRes*>& mapIOU, float th)
 	{
@@ -521,35 +774,36 @@ namespace ObjectSLAM {
 				
 				const cv::Mat cmask = pair2.second->mask;
 
-				cv::Mat overlap = pmask & cmask;
-				float nOverlap = (float)cv::countNonZero(overlap);
+				//cv::Mat overlap = pmask & cmask;
+				//float nOverlap = (float)cv::countNonZero(overlap);
 
-				//겹치는게 없으면 무시
-				if (nOverlap == 0) {
-					ares->iou = 0.0;
-				}
-				else {
-					float iou = 0.0;
+				////겹치는게 없으면 무시
+				//if (nOverlap == 0) {
+				//	ares->iou = 0.0;
+				//}
+				//else {
+				//	float iou = 0.0;
 
-					//백그라운드와 비교인지, 추정된 인스턴스와 비교인지에 따라서 다름.
-					//백그라운드와 비교시 SAM 요청 가능
-					if (id2 == 0) {
-						iou = nOverlap / area1;
-					}
-					if (id2 > 0)
-					{
-						cv::Mat total = pmask | cmask;
-						float nUnion = (float)cv::countNonZero(total);
-						iou = nOverlap / nUnion;
-					}
-					ares->iou = iou;
-					
-					/*if (iou > bestMatch.second)
-					{
-						bestMatch.first = id2;
-						bestMatch.second = iou;
-					}*/
-				}
+				//	//백그라운드와 비교인지, 추정된 인스턴스와 비교인지에 따라서 다름.
+				//	//백그라운드와 비교시 SAM 요청 가능
+				//	if (id2 == 0) {
+				//		iou = nOverlap / area1;
+				//	}
+				//	if (id2 > 0)
+				//	{
+				//		cv::Mat total = pmask | cmask;
+				//		float nUnion = (float)cv::countNonZero(total);
+				//		iou = nOverlap / nUnion;
+				//	}
+				//	ares->iou = iou;
+				//	
+				//	/*if (iou > bestMatch.second)
+				//	{
+				//		bestMatch.first = id2;
+				//		bestMatch.second = iou;
+				//	}*/
+				//}
+				ares->iou = CalculateIOU(pmask, cmask, area1, id2);
 				mapIOU[key] = ares;
 			}
 
@@ -692,7 +946,7 @@ namespace ObjectSLAM {
 			auto pG = pair.second;
 			GOMAP::GO2D g = pG->Project2D(Kc, Rc, tc);
 			g.rect = g.CalcRect();
-			spG2Ds[pG->id] = g;
+			spG2Ds[pair.first] = g;
 		}
 	}
 
@@ -922,6 +1176,10 @@ namespace ObjectSLAM {
 	//업데이트는 분리
 	void AssociationManager::UpdateGaussianObjectMap(std::map<int, int>& mapRes, InstanceMask* pPrevSegMask, InstanceMask* pCurrSegMask, const InstanceType& type)
 	{
+		long long total = 0;
+		long long total2 = 0;
+		int n = 0;
+
 		for (auto pair : mapRes)
 		{
 			auto pid = pair.first;
@@ -946,8 +1204,17 @@ namespace ObjectSLAM {
 			}
 			if (pG1 && !pG2)
 			{
+				std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
 				GOMAP::Optimizer::ObjectOptimizer::ObjectPosOptimization(pG1);
+				std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+				
 				GaussianMapManager::UpdateObjectWithIncremental(pG1, cIns);
+				std::chrono::high_resolution_clock::time_point t3 = std::chrono::high_resolution_clock::now();
+
+				total += std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+				total2 += std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count();
+				n++;
+
 				pG1->AddObservation(pCurrSegMask, cIns);
 				pGO = pG1;
 			}
@@ -980,6 +1247,10 @@ namespace ObjectSLAM {
 			}
 
 		}
+		if (n == 0)
+			n++;
+		std::cout << "optimization time = " << total / n <<"   "<<total2/n <<" :: "<<total << std::endl;
+
 	}
 	void AssociationManager::UpdateGaussianObjectMap(
 		InstanceMask* pPrevSegMask, InstanceMask* pCurrSegMask, const InstanceType& type)
@@ -2272,5 +2543,16 @@ namespace ObjectSLAM {
 			}
 		}
 	}
+	void AssociationManager::ExtractRegionFeatures(EdgeSLAM::KeyFrame* pKF, const cv::RotatedRect& rect, std::vector<cv::KeyPoint>& vecKPs, cv::Mat& desc) {
+		desc = cv::Mat::zeros(0, 32, CV_8UC1);
 
+		for (int i = 0; i < pKF->mvKeys.size(); i++) {
+			auto kp = pKF->mvKeys[i];
+			if (isPointInRotatedRect(kp.pt, rect))
+			{
+				vecKPs.push_back(kp);
+				desc.push_back(pKF->mDescriptors.row(i));
+			}
+		}
+	}
 }

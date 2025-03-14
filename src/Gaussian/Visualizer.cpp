@@ -67,7 +67,7 @@ namespace ObjectSLAM {
         
         cv::Size axes(cvRound(axes_length_major), cvRound(axes_length_minor));
         double angle_deg = angle * 180.0 / CV_PI;
-
+        
         // 타원 그리기
         cv::ellipse(image, center, axes, angle_deg, 0, 360, color, thickness);
 

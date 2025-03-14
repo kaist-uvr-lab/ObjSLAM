@@ -28,4 +28,30 @@ namespace ObjectSLAM {
 		}
 	}
 
+	FrameInstance* FrameInstance::ConvertedInstasnce(EdgeSLAM::KeyFrame* pKF, cv::Point2f apt)
+	{
+		auto pCurr = new FrameInstance(pKF);
+		pCurr->pt = this->pt + apt;
+		pCurr->rect = this->rect;
+		pCurr->rect.x += apt.x;
+		pCurr->rect.y += apt.y;
+		
+		for (auto pt : this->contour) {
+			auto npt = pt;
+			npt.x += apt.x;
+			npt.y += apt.y;
+			pCurr->contour.push_back(npt);
+		}
+
+		pCurr->area = this->area;
+
+		//mask
+		std::vector<std::vector<cv::Point>> contours;
+		contours.push_back(pCurr->contour);
+		cv::Mat newmask = cv::Mat::zeros(mask.rows, mask.cols, CV_8UC1);;
+		cv::drawContours(newmask, contours, 0, cv::Scalar(255, 255, 255), -1);
+		pCurr->mask = newmask.clone();
+		return pCurr;
+	}
+
 }
