@@ -5,6 +5,184 @@
 #include <KeyFrame.h>
 
 namespace ObjectSLAM {
+	bool GaussianMapManager::InitializeObject(GOMAP::GaussianObject* pG) {
+		auto obs = pG->GetObservations();
+		if (obs.size() < 2){
+			std::cout << "관측 수 부족" << std::endl;
+			return false;
+		}
+
+		float min_sim = 0.9998;
+
+		FrameInstance* prev = nullptr;
+		FrameInstance* curr = nullptr;
+
+		for (auto pair1 : obs)
+		{
+			auto p1 = pair1.second;
+			auto pKF1 = p1->mpRefKF;
+
+			const float& fx1 = pKF1->fx;
+			const float& fy1 = pKF1->fy;
+			const float& cx1 = pKF1->cx;
+			const float& cy1 = pKF1->cy;
+			const float& invfx1 = pKF1->invfx;
+			const float& invfy1 = pKF1->invfy;
+
+			float x1 = p1->pt.x;
+			float y1 = p1->pt.y;
+
+			cv::Mat Rcw1 = pKF1->GetRotation();
+			cv::Mat Rwc1 = Rcw1.t();
+
+			cv::Mat xn1 = (cv::Mat_<float>(3, 1) << (x1 - cx1) * invfx1, (y1 - cy1) * invfy1, 1.0);
+			cv::Mat ray1 = Rwc1 * xn1;
+			ray1 /= cv::norm(ray1);
+
+			for (auto pair2 : obs)
+			{
+				auto p2 = pair2.second;
+				if (p1 == p2)
+					continue;
+				auto pK2 = p2->mpRefKF;	
+				auto pKF2 = p2->mpRefKF;
+
+				const float& fx2 = pKF2->fx;
+				const float& fy2 = pKF2->fy;
+				const float& cx2 = pKF2->cx;
+				const float& cy2 = pKF2->cy;
+				const float& invfx2 = pKF2->invfx;
+				const float& invfy2 = pKF2->invfy;
+
+				float x2 = p2->pt.x;
+				float y2 = p2->pt.y;
+				
+				cv::Mat Rcw2 = pKF2->GetRotation();
+				cv::Mat Rwc2 = Rcw2.t();
+
+				cv::Mat xn2 = (cv::Mat_<float>(3, 1) << (x2 - cx2) * invfx2, (y2 - cy2) * invfy2, 1.0);
+				cv::Mat ray2 = Rwc2 * xn2;
+				ray2 /= cv::norm(ray2);
+
+				const float cosParallaxRays = ray1.dot(ray2) / (cv::norm(ray1) * cv::norm(ray2));
+
+				if (cosParallaxRays < min_sim) {
+					//정렬 후 진행해야 할 수도 있음.
+					min_sim = cosParallaxRays;
+					prev = p1;
+					curr = p2;
+				}
+			}
+		}
+		
+		if (!prev || !curr)
+			return false;
+		
+		if (InitializeObject(pG, prev, curr)){
+			//std::cout << "생성 성공" << std::endl;
+			return true;
+		}
+		/*else
+			std::cout << "생성 실패" << std::endl;*/
+		return false;
+	}
+
+	bool GaussianMapManager::InitializeObject(GOMAP::GaussianObject* pG, FrameInstance* pPrev, FrameInstance* pCurr) {
+		
+		//초기 데이터 획득
+		auto pKF1 = pPrev->mpRefKF;
+		auto pKF2 = pCurr->mpRefKF;
+
+		const float& fx1 = pKF1->fx;
+		const float& fy1 = pKF1->fy;
+		const float& cx1 = pKF1->cx;
+		const float& cy1 = pKF1->cy;
+		const float& invfx1 = pKF1->invfx;
+		const float& invfy1 = pKF1->invfy;
+
+		const float& fx2 = pKF2->fx;
+		const float& fy2 = pKF2->fy;
+		const float& cx2 = pKF2->cx;
+		const float& cy2 = pKF2->cy;
+		const float& invfx2 = pKF2->invfx;
+		const float& invfy2 = pKF2->invfy;
+
+		cv::Mat Tcw1 = pKF1->GetPose();
+		cv::Mat Tcw2 = pKF2->GetPose();
+
+		float x1 = pPrev->pt.x;
+		float y1 = pPrev->pt.y;
+
+		float x2 = pCurr->pt.x;
+		float y2 = pCurr->pt.y;
+
+		cv::Mat xn1 = (cv::Mat_<float>(3, 1) << (x1 - cx1) * invfx1, (y1 - cy1) * invfy1, 1.0);
+		cv::Mat xn2 = (cv::Mat_<float>(3, 1) << (x2 - cx2) * invfx2, (y2 - cy2) * invfy2, 1.0);
+
+		cv::Mat Rcw1 = Tcw1.rowRange(0, 3).colRange(0, 3);
+		cv::Mat Rcw2 = Tcw2.rowRange(0, 3).colRange(0, 3);
+
+		cv::Mat Rwc1 = Rcw1.t();
+		cv::Mat Rwc2 = Rcw2.t();
+
+		cv::Mat tcw1 = Tcw1.rowRange(0, 3).col(3);
+		cv::Mat tcw2 = Tcw2.rowRange(0, 3).col(3);
+
+		cv::Mat ray1 = Rwc1 * xn1;
+		cv::Mat ray2 = Rwc2 * xn2;
+
+		/*ray1 /= cv::norm(ray1);
+		ray2 /= cv::norm(ray2);*/
+
+		const float cosParallaxRays = ray1.dot(ray2) / (cv::norm(ray1) * cv::norm(ray2));
+
+		if (cosParallaxRays > 0.9998) {
+
+			double dotProduct = ray1.dot(ray2);
+			dotProduct = std::max(-1.0, std::min(1.0, dotProduct));
+			double angleRad = std::acos(dotProduct);
+			double angleDeg = angleRad * 180.0 / CV_PI;
+
+			std::cout << "GO::cos sim error = " << cosParallaxRays << " " << angleDeg << std::endl;
+			return false;
+		}
+		//평균 3D 위치 계산
+		//SVD 이용?
+
+		//초기 불확실성 계산
+
+		//바운딩 박스
+
+		//옵저베이션 추가
+		//cv::Mat ray1, ray2;
+		cv::Mat mean;
+		if (!GaussianMapManager::triangulatePoint(xn1, xn2, Tcw1, Tcw2, mean)) {
+			std::cout << "GO::삼각화 에러 " << std::endl;
+			return false;
+		}
+		if (!CheckObjectPosition(mean, pPrev->pt, Rcw1, tcw1, fx1, fy1, cx1, cy1)) {
+			std::cout << "GO::Frame1::포인트 생성 에러" << std::endl;
+			return false;
+		}
+		if (!CheckObjectPosition(mean, pCurr->pt, Rcw2, tcw2, fx2, fy2, cx2, cy2))
+		{
+			std::cout << "GO::Frame2::포인트 생성 에러" << std::endl;
+			return false;
+		}
+		
+		//증분 공분산
+		cv::Mat Rwo = Tcw1.rowRange(0, 3).colRange(0, 3).t();
+		cv::Mat cov1, cov2, cov;
+		int n1 = GaussianMapManager::computeCovariance(cov1, pPrev, Tcw1, Rwo, mean, invfx1, invfy1);
+		int n2 = GaussianMapManager::computeCovariance(cov2, pCurr, Tcw2, Rwo, mean, invfx2, invfy2);
+		cov = cov1 + cov2;
+
+		//auto pGO = new GOMAP::GaussianObject(mean, cov, Rwo);
+		pG->Initialize(mean, cov, Rwo);
+		pG->nContour = n1 + n2;
+		//pG->nObs = 2;
+		return true;
+	}
 
 	GOMAP::GaussianObject* GaussianMapManager::InitializeObject(FrameInstance* pPrev, FrameInstance* pCurr) {
 
@@ -37,7 +215,34 @@ namespace ObjectSLAM {
 
 		cv::Mat xn1 = (cv::Mat_<float>(3, 1) << (x1 - cx1) * invfx1, (y1 - cy1) * invfy1, 1.0);
 		cv::Mat xn2 = (cv::Mat_<float>(3, 1) << (x2 - cx2) * invfx2, (y2 - cy2) * invfy2, 1.0);
+		
+		cv::Mat Rcw1 = pKF1->GetRotation();
+		cv::Mat Rcw2 = pKF2->GetRotation();
 
+		cv::Mat Rwc1 = Rcw1.t();
+		cv::Mat Rwc2 = Rcw2.t();
+
+		cv::Mat tcw1 = pKF1->GetTranslation();
+		cv::Mat tcw2 = pKF2->GetTranslation();
+
+		cv::Mat ray1 = Rwc1 * xn1;
+		cv::Mat ray2 = Rwc2 * xn2;
+
+		ray1 /= cv::norm(ray1);
+		ray2 /= cv::norm(ray2);
+
+		const float cosParallaxRays = ray1.dot(ray2) / (cv::norm(ray1) * cv::norm(ray2));
+
+		if (cosParallaxRays > 0.9998){
+
+			double dotProduct = ray1.dot(ray2);
+			dotProduct = std::max(-1.0, std::min(1.0, dotProduct));
+			double angleRad = std::acos(dotProduct);
+			double angleDeg = angleRad * 180.0 / CV_PI;
+
+			std::cout << "GO::cos sim error = " << cosParallaxRays <<" "<<angleDeg << std::endl;
+			return new GOMAP::GaussianObject();
+		}
 		//평균 3D 위치 계산
 		//SVD 이용?
 
@@ -46,9 +251,32 @@ namespace ObjectSLAM {
 		//바운딩 박스
 
 		//옵저베이션 추가
-		cv::Mat ray1, ray2;
+		//cv::Mat ray1, ray2;
 		cv::Mat mean;
-		GaussianMapManager::triangulatePoint(xn1, xn2, Tcw1, Tcw2, mean);
+		if (!GaussianMapManager::triangulatePoint(xn1, xn2, Tcw1, Tcw2, mean)){
+			std::cout << "GO::삼각화 에러 " << std::endl;
+			return new GOMAP::GaussianObject();
+		}
+		if (!CheckObjectPosition(mean, pPrev->pt, Rcw1, tcw1, fx1, fy1, cx1, cy1)){
+			std::cout << "GO::Frame1::포인트 생성 에러" << std::endl;
+			return new GOMAP::GaussianObject();
+		}
+		if (!CheckObjectPosition(mean, pCurr->pt, Rcw2, tcw2, fx2, fy2, cx2, cy2))
+		{
+			std::cout << "GO::Frame2::포인트 생성 에러" << std::endl;
+			return new GOMAP::GaussianObject();
+		}
+		//디스턴스, 뎁스 에러 체크
+
+		//중점으로 계산
+		/*auto Ow1 = cv::Point3f(pKF1->GetCameraCenter());
+		auto Ow2 = cv::Point3f(pKF1->GetCameraCenter());
+		auto ray1 = cv::Point3f(xn1);
+		auto ray2 = cv::Point3f(xn2);
+		cv::Point3f intersection;
+		float distance;
+		compute3DLineIntersection(Ow1, ray1, Ow2, ray2, intersection, distance);
+		mean = cv::Mat(intersection);*/
 
 		////EKF 공분산
 		////covariance
@@ -66,6 +294,8 @@ namespace ObjectSLAM {
 		////2. 교차영역 고려
 		//cv::Mat cov = (cov1.inv() + cov2.inv()).inv();
 		////EKF 공분산
+
+		
 
 		//증분 공분산
 		cv::Mat Rwo = Tcw1.rowRange(0, 3).colRange(0, 3).t();
@@ -199,6 +429,104 @@ namespace ObjectSLAM {
 		ray = Rwc * ray;
 		cv::normalize(ray, ray);
 	}
+
+	//line_point : 카메라 원점, dir은 방향
+	bool GaussianMapManager::compute3DLineIntersection(
+		const cv::Point3f& line1_point, const cv::Point3f& line1_direction,
+		const cv::Point3f& line2_point, const cv::Point3f& line2_direction,
+		cv::Point3f& intersection, float& distance) {
+
+		// 방향 벡터의 정규화
+		cv::Point3f d1 = line1_direction / cv::norm(line1_direction);
+		cv::Point3f d2 = line2_direction / cv::norm(line2_direction);
+
+		// 두 방향 벡터의 외적
+		cv::Point3f cross = d1.cross(d2);
+		float cross_norm = cv::norm(cross);
+
+		// 두 직선이 평행한 경우
+		if (cross_norm < 1e-6f) {
+			// 첫 번째 직선에서 두 번째 직선까지의 수직 벡터 계산
+			cv::Point3f v = line2_point - line1_point;
+			cv::Point3f proj = d1 * (v.dot(d1));
+
+			// 거리 계산
+			cv::Point3f perpendicular = v - proj;
+			distance = cv::norm(perpendicular);
+
+			// 첫 번째 직선에서 가장 가까운 점 반환
+			intersection = line1_point;
+			return false;
+		}
+
+		// 두 직선이 평행하지 않은 경우
+		// 가장 가까운 점을 계산하기 위한 방정식 설정
+		cv::Point3f v = line2_point - line1_point;
+
+		// 두 변수 s와 t를 계산하기 위한 행렬식 해결
+		float a = d1.dot(d1);
+		float b = d1.dot(d2);
+		float c = d2.dot(d2);
+		float d = d1.dot(v);
+		float e = d2.dot(v);
+
+		float denom = a * c - b * b;
+
+		// 분모가 0이면 두 직선이 평행하거나 일치
+		if (std::abs(denom) < 1e-6f) {
+			distance = 0.0f;
+			intersection = line1_point;
+			return false;
+		}
+
+		// 가장 가까운 점에 해당하는 매개변수 값 계산
+		float s = (b * e - c * d) / denom;
+		float t = (a * e - b * d) / denom;
+
+		// 두 직선에서 가장 가까운 점 계산
+		cv::Point3f closest_point1 = line1_point + d1 * s;
+		cv::Point3f closest_point2 = line2_point + d2 * t;
+
+		// 두 직선 사이의 최소 거리 계산
+		distance = cv::norm(closest_point2 - closest_point1);
+
+		// 교차점 또는 중간점 결정
+		if (distance < 1e-6f) {
+			intersection = closest_point1;
+			return true; // 실제 교차
+		}
+		else {
+			// 두 직선이 교차하지 않으면 중간점 반환
+			intersection = (closest_point1 + closest_point2) * 0.5f;
+			return false;
+		}
+	}
+
+	bool GaussianMapManager::CheckObjectPosition(const cv::Mat& X, cv::Point2f pt, const cv::Mat& R, const cv::Mat& t
+		, float fx, float fy, float cx, float cy, float sigmaSquare) {
+		
+		cv::Mat Xt = X.t();
+
+		float z1 = R.row(2).dot(Xt) + t.at<float>(2);
+		
+		if (z1 <= 0)
+			return false;
+		
+		const float x1 = R.row(0).dot(Xt) + t.at<float>(0);
+		const float y1 = R.row(1).dot(Xt) + t.at<float>(1);
+		const float invz1 = 1.0 / z1;
+		
+		float u1 = fx * x1 * invz1 + cx;
+		float v1 = fy * y1 * invz1 + cy;
+		float errX1 = u1 - pt.x;
+		float errY1 = v1 - pt.y;
+		
+		if ((errX1 * errX1 + errY1 * errY1) > 5.991 * sigmaSquare)
+			return false;
+		
+		return true;
+	}
+
 	bool GaussianMapManager::triangulatePoint(const cv::Mat& xn1, const cv::Mat& xn2, const cv::Mat& Tcw1, const cv::Mat& Tcw2, cv::Mat& x3D){
 		//삼각화 확인
 

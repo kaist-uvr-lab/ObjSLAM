@@ -11,9 +11,11 @@ namespace ObjectSLAM {
 	namespace GOMAP {
 
         std::atomic<long unsigned int> GaussianObject::mnNextId = 0;
-
+        GaussianObject::GaussianObject() :mbInitialized(false)
+            , nObs(0), nContour(0), nSeg(0), id(++GaussianObject::mnNextId) {}
 		GaussianObject::GaussianObject(const cv::Mat& _pos, const cv::Mat& _cov, const cv::Mat& _R)
-			:mean(_pos), covariance(_cov), Rwo(_R), nObs(0), nContour(0), nSeg(0), id(++GaussianObject::mnNextId){
+			:mean(_pos), covariance(_cov), Rwo(_R), nObs(0), nContour(0), nSeg(0), id(++GaussianObject::mnNextId)
+        , mbInitialized(true){
 		}
         cv::RotatedRect GO2D::CalcEllipse(float chisq)
         {
@@ -54,6 +56,16 @@ namespace ObjectSLAM {
                 static_cast<int>(height)
             );
             return rrect;
+        }
+
+        void GaussianObject::Initialize(const cv::Mat& _pos, const cv::Mat& _cov, const cv::Mat& _R) {
+            {
+                std::unique_lock<std::mutex> lock(mMutex);
+                mean = _pos.clone();
+                covariance = _cov.clone();
+                Rwo = _R.clone();
+            }
+            mbInitialized = true;
         }
 
         void GaussianObject::SetPosition(const cv::Mat& _pos) {

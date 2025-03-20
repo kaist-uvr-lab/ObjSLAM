@@ -55,7 +55,7 @@ namespace ObjectSLAM {
 		};
 		class GaussianObject {
 		public:
-			GaussianObject() {}
+			GaussianObject();
 			GaussianObject(const cv::Mat& _pos, const cv::Mat& _cov, const cv::Mat& _R);
 			/*GaussianObject(const cv::Mat& pos, const cv::Mat& cov,
 				const cv::Mat& feat, const cv::Rect2d& box,
@@ -72,7 +72,7 @@ namespace ObjectSLAM {
 			std::atomic<int> nContour;//전체 포인트의 수
 
 			ConcurrentMap<InstanceMask*, FrameInstance*> mObservations;
-
+			
 			GO2D Project2D(const cv::Mat& K, const cv::Mat& Rcw, const cv::Mat& tcw);
 			void AddObservation(InstanceMask* f, FrameInstance* obs, bool btype = true); //true이면 seg, false이면 sam
 			FrameInstance* GetObservation(InstanceMask* f);
@@ -84,10 +84,12 @@ namespace ObjectSLAM {
 			cv::Rect2d bbox;
 			double observationNoise;*/
 		public:
+			void Initialize(const cv::Mat& _pos, const cv::Mat& _cov, const cv::Mat& _R);
 			void SetPosition(const cv::Mat& _pos);
 			cv::Mat GetPosition();
 			void SetCovariance(const cv::Mat& _cov);
 			cv::Mat GetCovariance();
+			std::atomic<bool> mbInitialized;
 		private:
 			std::mutex mMutex;
 			cv::Mat mean;

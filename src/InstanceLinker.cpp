@@ -120,7 +120,7 @@ namespace ObjectSLAM {
             //average point
             //반이상 변환이 되면 나머지를 그 중심으로 변환.
             auto tpt = res[0].second;
-            std::cout << "fail raft flow = " << pt.x << std::endl << std::endl << std::endl;;
+            //std::cout << "fail raft flow = " << pt.x << std::endl << std::endl << std::endl;;
 
             std::vector<cv::Point2f> pts;
             pts.push_back(cv::Point2f(pt.x - 4, pt.y));
@@ -158,7 +158,9 @@ namespace ObjectSLAM {
             //    }
             //    pCurr->contour.push_back(npt);
             //}
-            std::cout << "raft fail test = " << nfail << " " << pts.size() << std::endl << std::endl;
+            
+            //std::cout << "raft fail test = " << nfail << " " << pts.size() << std::endl << std::endl;
+            
             return false;
         }
         else

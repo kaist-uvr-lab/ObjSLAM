@@ -27,6 +27,8 @@ namespace ObjectSLAM {
 		namespace Optimizer {
 			void ObjectOptimizer::ObjectPosOptimization(GaussianObject* pG) {
 
+				int ntrial = 10;
+
 				//63이 맞나? 흠...
 				g2o::SparseOptimizer optimizer;
 				auto linear_solver = std::make_unique<g2o::LinearSolverEigen<g2o::BlockSolver_6_3::PoseMatrixType>>();
@@ -94,7 +96,7 @@ namespace ObjectSLAM {
 
 				//최적화
 				float chi2Mono[4] = { th,th,th,th };
-				int its[4] = { 10,10,10,10 };
+				int its[4] = { ntrial,ntrial,ntrial,ntrial };
 
 				int nBad = 0;
 				for (size_t it = 0; it < 1; it++)

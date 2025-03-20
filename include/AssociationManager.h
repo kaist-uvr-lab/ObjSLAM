@@ -12,6 +12,7 @@
 namespace EdgeSLAM {
 	class SLAM;
 	class KeyFrame;
+	class MapPoint;
 }
 
 namespace ObjectSLAM {
@@ -53,10 +54,12 @@ namespace ObjectSLAM {
 			, const int id, const int id2, const int _type
 			, const std::string& mapName, const std::string& userName
 			, BoxFrame* pNewBF, InstanceMask* pCurrSegMask
-			, std::map<int, FrameInstance*>& mapSamInstances, bool bShow = true);
+			, std::map<int, FrameInstance*>& mapSamInstances, bool bShow  = true);
 		
 		//iou 체크
 		static float CalculateIOU(const cv::Mat& mask1, const cv::Mat& mask2, float area1, int id = 1);
+
+		static ConcurrentMap<int, int> DebugAssoSeg, DebugAssoSAM;
 
 	private:
 		//라프트 정보를 이용해서 source 프레임의 마스크를 변환
@@ -69,7 +72,9 @@ namespace ObjectSLAM {
 		static void EvaluateMatchResults(std::map<std::pair<int,int>, AssoMatchRes*>& mapIOU, std::map<std::pair<int,int>, AssoMatchRes*>& mapSuccess, float th = 0.5);
 
 		//맵의 불확싱성을 위한 연결
-		static void AssociationWithUncertainty(AssoFramePairData* pPairData);
+		static void TestUncertainty(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, AssoFramePairData* pPairData);
+		static void AssociationWithUncertainty(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData);
+		static void AssociateLocalMapWithUncertainty(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData);
 		static FrameInstance* GenerateFrameInsWithUncertainty(
 			EdgeSLAM::KeyFrame* pKF, const ObjectRegionFeatures& prev, const ObjectRegionFeatures& map, 
 			const std::vector<std::pair<int, int>>& vecMatches);
@@ -125,7 +130,9 @@ namespace ObjectSLAM {
 		static bool IsContain(const cv::Rect& rect1, const cv::Rect& rect2);
 		//KP or MP 매칭 관련
 		static void ExtractRegionFeatures(EdgeSLAM::KeyFrame* pKF, const cv::RotatedRect& rect, std::vector<cv::KeyPoint>& vecKPs, cv::Mat& desc);
+		static void ExtractRegionFeatures(EdgeSLAM::KeyFrame* pKF, const cv::RotatedRect& rect, std::vector<cv::KeyPoint>& vecKPs, std::vector<EdgeSLAM::MapPoint*>& vecMPs, cv::Mat& desc);
 		static void ExtractRegionFeatures(EdgeSLAM::KeyFrame* pKF, const cv::Rect& rect, std::vector<cv::KeyPoint>& vecKPs, cv::Mat& desc);
+		static void ExtractRegionFeatures(EdgeSLAM::KeyFrame* pKF, const cv::Rect& rect, std::vector<cv::KeyPoint>& vecKPs, std::vector<EdgeSLAM::MapPoint*>& vecMPs, cv::Mat& desc);
 
 		////LocalMaps
 		static void GetLocalObjectMaps(InstanceMask* pMask, std::map<int,GOMAP::GaussianObject*>& spGOs);
