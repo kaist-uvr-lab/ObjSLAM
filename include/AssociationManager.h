@@ -40,6 +40,13 @@ namespace ObjectSLAM {
 			, const std::string& mapName, const std::string& userName, const int _type
 			, AssoFramePairData* pPairData);
 
+		static void AssociationWithSAMfromSEG(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key
+			, const std::string& mapName, const std::string& userName, const InstanceType& type
+			, AssoFramePairData* pPairData);
+		static void AssociationWithSAMfromMAP(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key
+			, const std::string& mapName, const std::string& userName, const InstanceType& type
+			, AssoFramePairData* pPairData);
+
 		///이전 버전
 		static void Association(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key, const int id, const int id2
 			, const std::string& mapName, const std::string& userName
@@ -74,6 +81,7 @@ namespace ObjectSLAM {
 		//맵의 불확싱성을 위한 연결
 		static void TestUncertainty(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, AssoFramePairData* pPairData);
 		static void AssociationWithUncertainty(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData);
+		static void AssociationPrevMapWithUncertainty(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData);
 		static void AssociateLocalMapWithUncertainty(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData);
 		static FrameInstance* GenerateFrameInsWithUncertainty(
 			EdgeSLAM::KeyFrame* pKF, const ObjectRegionFeatures& prev, const ObjectRegionFeatures& map, 
@@ -139,6 +147,9 @@ namespace ObjectSLAM {
 		////Project
 		static void GetObjectMap2Ds(const std::map<int, GOMAP::GaussianObject*>& spGOs, BoxFrame* pBF, std::map<int, GOMAP::GO2D>& spG2Ds);
 		static void ConvertFrameInstances(const std::map<int, GOMAP::GO2D>& spG2Ds, BoxFrame* pBF, std::map<int, FrameInstance*>& mapIns);
-	};
+	
+		//request sam
+		static void RequestSAMToServer(const std::map<int, FrameInstance*> mapRes, int currid, int previd, const std::string& user, InstanceType type);
+};
 }
 #endif

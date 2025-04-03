@@ -25,6 +25,9 @@ namespace ObjectSLAM {
 	enum class InstanceType {
 		SEG, SAM, RAFT, MAP
 	};
+	enum class AssociationResultType {
+		SUCCESS, FAIL, RECOVERY
+	};
 
 	class ObjectPoint;
 	class BoundingBox;

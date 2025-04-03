@@ -2,6 +2,8 @@
 #define OBJECT_SLAM_GLOBAL_INSTANCE_H
 #pragma once
 
+//SQ-SLAM의 객체를 생성하는 코드로
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
 
