@@ -24,6 +24,14 @@ namespace ObjectSLAM {
 	class BoxFrame;
 	class FrameInstance;
 
+	namespace Evaluation {
+		class EvalObj;
+	}
+
+	namespace GOMAP {
+		class GO2D;
+	}
+
 	class GlobalInstance {
 	public:
 		GlobalInstance();
@@ -46,7 +54,7 @@ namespace ObjectSLAM {
 		cv::Point2f GetCenter(const std::vector<cv::Point2f>& points);
 		cv::Rect GetRect(const std::vector<cv::Point2f>& points);
 
-		void Connect(FrameInstance* pIns, BoxFrame* pBF, int id);
+		void Connect(FrameInstance* pIns);
 		//mask의 맵포인트 추가
 		void AddMapPoints(std::set<EdgeSLAM::MapPoint*> spMPs);
 
@@ -55,17 +63,20 @@ namespace ObjectSLAM {
 		//isBad
 		//Merge
 		static ObjectSLAM* ObjSystem;
+		Evaluation::EvalObj* mpEval;
 		std::atomic<bool> mbBad;
 		//bool isOutlier(const cv::Rect& rect, cv::Point2f pt);
 		void RemoveOutlier();
 		void Update(std::vector<cv::Mat>& mat, float val = 1.285);
 		cv::Point2f ProjectPoint(const cv::Mat T, const cv::Mat& K);
 		cv::Mat GetPosition();
+		cv::Mat GetCovariance();
 		void UpdatePosition();
+		GOMAP::GO2D Project2D(const cv::Mat& K, const cv::Mat& Rcw, const cv::Mat& tcw);
 		//void UpdatePosition(std::vector<)
 	private:
 		std::mutex mMutexPos;
-		cv::Mat pos;
+		cv::Mat pos, cov;
 		cv::Mat axis;
 		float sx, sy, sz;
 		////Position 
@@ -78,18 +89,26 @@ namespace ObjectSLAM {
 		std::mutex mMutexBB;
 		std::vector<cv::Point3f> vecCorners;
 
-
 		////3D Bounding Box
 	public:
 		int mnId;
 		std::atomic<int> mnMatchFail;
 		ConcurrentSet<EdgeSLAM::MapPoint*> AllMapPoints;
-		ConcurrentMap<BoxFrame*, int> mapConnected;
-		ConcurrentMap<FrameInstance*, int> mapInstances;
+		ConcurrentSet<FrameInstance*> setConnected;
+		//ConcurrentMap<BoxFrame*, int> mapConnected;
+		//ConcurrentMap<FrameInstance*, int> mapInstances;
 		static std::atomic<long unsigned int> mnNextGIId;
 		ConcurrentMap<std::pair<int,int>, std::set<EdgeSLAM::KeyFrame*>> MapKFs;
 		ConcurrentMap<std::pair<int, int>, std::map<int, std::set<EdgeSLAM::MapPoint*>>> MapMPs;
 	};
+
+	class BaseObjMapManager{
+	public:
+
+	private:
+
+	};
+
 }
 
 #endif

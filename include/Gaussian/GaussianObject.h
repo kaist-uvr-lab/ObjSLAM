@@ -13,8 +13,13 @@ namespace ObjectSLAM {
 	/*namespace GOMAP {
 		class GaussianObject;
 	}*/
+	class GlobalInstance;
 	class FrameInstance;
 	class InstanceMask;
+
+	namespace Evaluation {
+		class EvalObj;
+	}
 
 	namespace GOMAP {
 		
@@ -52,6 +57,7 @@ namespace ObjectSLAM {
 			float CalcIOU(GO2D& other) {
 				return CalcIOU(other.rect);
 			}
+
 		};
 		class GaussianObject {
 		public:
@@ -74,15 +80,23 @@ namespace ObjectSLAM {
 			ConcurrentMap<InstanceMask*, FrameInstance*> mObservations;
 			
 			GO2D Project2D(const cv::Mat& K, const cv::Mat& Rcw, const cv::Mat& tcw);
+
+			void GenerateEllipsoidPoints(cv::Mat& points, float scale = 1.0, int resolution = 20);
+
 			void AddObservation(InstanceMask* f, FrameInstance* obs, bool btype = true); //true이면 seg, false이면 sam
 			FrameInstance* GetObservation(InstanceMask* f);
 			std::map<InstanceMask*, FrameInstance*> GetObservations();
 
 			float CalcDistance3D(GaussianObject* other);
 
+			bool IsSameObject(GaussianObject* pOther, float th = 3.0);
+
 			/*cv::Mat features;
 			cv::Rect2d bbox;
 			double observationNoise;*/
+			//test
+			GlobalInstance* mpBaseObj;
+			Evaluation::EvalObj* mpEval;
 		public:
 			void Initialize(const cv::Mat& _pos, const cv::Mat& _cov, const cv::Mat& _R);
 			void SetPosition(const cv::Mat& _pos);

@@ -157,16 +157,16 @@ namespace ObjectSLAM {
 		//cv::Mat ray1, ray2;
 		cv::Mat mean;
 		if (!GaussianMapManager::triangulatePoint(xn1, xn2, Tcw1, Tcw2, mean)) {
-			std::cout << "GO::삼각화 에러 " << std::endl;
+			//std::cout << "GO::삼각화 에러 " << std::endl;
 			return false;
 		}
 		if (!CheckObjectPosition(mean, pPrev->pt, Rcw1, tcw1, fx1, fy1, cx1, cy1)) {
-			std::cout << "GO::Frame1::포인트 생성 에러" << std::endl;
+			//std::cout << "GO::Frame1::포인트 생성 에러" << std::endl;
 			return false;
 		}
 		if (!CheckObjectPosition(mean, pCurr->pt, Rcw2, tcw2, fx2, fy2, cx2, cy2))
 		{
-			std::cout << "GO::Frame2::포인트 생성 에러" << std::endl;
+			//std::cout << "GO::Frame2::포인트 생성 에러" << std::endl;
 			return false;
 		}
 		

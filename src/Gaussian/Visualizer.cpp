@@ -126,7 +126,7 @@ namespace ObjectSLAM {
     std::vector<cv::Point3f> GaussianVisualizer::generateEllipsoidPoints(const cv::Mat& covariance,
         const cv::Point3f& center,
         float scale,
-        int resolution) 
+        int resolution)  
     {
         cv::Mat eigenvalues, eigenvectors;
         cv::eigen(covariance, eigenvalues, eigenvectors);
@@ -167,4 +167,5 @@ namespace ObjectSLAM {
         }
         return points;
     }
+
 }

@@ -13,6 +13,7 @@
 
 namespace EdgeSLAM {
 	class KeyFrame;
+	class Frame;
 }
 
 namespace ObjectSLAM {

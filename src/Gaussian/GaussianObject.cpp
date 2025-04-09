@@ -15,7 +15,7 @@ namespace ObjectSLAM {
             , nObs(0), nContour(0), nSeg(0), id(++GaussianObject::mnNextId) {}
 		GaussianObject::GaussianObject(const cv::Mat& _pos, const cv::Mat& _cov, const cv::Mat& _R)
 			:mean(_pos), covariance(_cov), Rwo(_R), nObs(0), nContour(0), nSeg(0), id(++GaussianObject::mnNextId)
-        , mbInitialized(true){
+        , mbInitialized(true), mpEval(nullptr), mpBaseObj(nullptr){
 		}
         cv::RotatedRect GO2D::CalcEllipse(float chisq)
         {
@@ -83,6 +83,52 @@ namespace ObjectSLAM {
         cv::Mat GaussianObject::GetCovariance() {
             std::unique_lock<std::mutex> lock(mMutex);
             return covariance.clone();
+        }
+
+        void GaussianObject::GenerateEllipsoidPoints(
+            cv::Mat& points
+            ,float scale,
+            int resolution)
+        {
+            cv::Mat center = this->GetPosition();
+            cv::Mat cov = this->GetCovariance();
+            cov /= (this->nContour - 1);
+
+            cv::Mat eigenvalues, eigenvectors;
+            cv::eigen(cov, eigenvalues, eigenvectors);
+
+            float phi_step = 2 * CV_PI / resolution;
+            float theta_step = CV_PI / resolution;
+
+            float x = cv::sqrt(eigenvalues.at<float>(0));
+            float y = cv::sqrt(eigenvalues.at<float>(1));
+            float z = cv::sqrt(eigenvalues.at<float>(2));
+
+            points = cv::Mat::zeros(0, 3, CV_32FC1);
+            cv::Mat tmp = (cv::Mat_<float>(3, 1) << x, y, z);
+            tmp = scale * eigenvectors * cv::Mat::diag(tmp);
+
+            for (int i = 0; i <= resolution; i++) {
+                float theta = i * theta_step;
+                for (int j = 0; j <= resolution; j++) {
+                    float phi = j * phi_step;
+
+                    // 단위 구 위의 점
+                    cv::Mat p = (cv::Mat_<float>(3, 1) <<
+                        sin(theta) * cos(phi),
+                        sin(theta) * sin(phi),
+                        cos(theta));
+
+                    // 타원체로 변환
+                    /*cv::Mat transformed = eigenvectors *
+                        cv::Mat::diag(cv::sqrt(eigenvalues)) *
+                        p * scale;*/
+                    cv::Mat transformed = tmp * p;
+                    transformed += center;
+                    points.push_back(transformed.t());
+
+                }
+            }
         }
 
         GO2D GaussianObject::Project2D(const cv::Mat& K, const cv::Mat& Rcw, const cv::Mat& tcw) {
@@ -169,16 +215,25 @@ namespace ObjectSLAM {
             return mObservations.Get(f);
         }
         float GaussianObject::CalcDistance3D(GaussianObject* other){
-            cv::Mat diff = this->mean - other->mean;
-            cv::Mat combined = this->covariance + other->covariance;
             
-            cv::Matx33d invCov; 
+            cv::Mat diff = this->GetPosition() - other->GetPosition();
+            cv::Mat combined = this->GetCovariance()+ other->GetCovariance();
+            float n = this->nContour + other->nContour - 2;
+            combined /= n;
+            
+            cv::Mat invCov; 
             cv::invert(combined, invCov, cv::DECOMP_SVD); // SVD 분해를 통한 안정적인 역행렬 계산
-
+            
             // 4. 마할라노비스 거리 계산: d^T * invCov * d
-            float dist = cv::Mat(diff.t() * invCov * diff).at<float>(0);
-
+            
+            cv::Mat res = diff.t() * invCov * diff;
+            float dist = res.at<float>(0);
+            
             return std::sqrt(dist);
+        }
+        bool GaussianObject::IsSameObject(GaussianObject* pOther, float th) {
+            float dist = this->CalcDistance3D(pOther);
+            return dist < th;
         }
 	}
 

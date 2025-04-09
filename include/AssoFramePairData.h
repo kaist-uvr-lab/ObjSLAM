@@ -24,7 +24,8 @@ namespace ObjectSLAM {
 	}
 	class AssoFramePairData {
 	public:
-		AssoFramePairData():fromid(-1),toid(-1),mpFrom(nullptr),mpTo(nullptr), mpRaftIns(nullptr), mpSamIns(nullptr), mpPrevMapIns(nullptr), mpLocalMapIns(nullptr){}
+		AssoFramePairData():fromid(-1),toid(-1),mpFrom(nullptr),mpTo(nullptr), mpRaftIns(nullptr), mpSamIns(nullptr)
+			, mpSamIns2(nullptr), mpPrevMapIns(nullptr), mpLocalMapIns(nullptr), mpFrameMapIns(nullptr){}
 		AssoFramePairData(BoxFrame* pFrom, BoxFrame* pTo);
 		virtual ~AssoFramePairData() {}
 
@@ -32,7 +33,10 @@ namespace ObjectSLAM {
 		int fromid, toid;
 		BoxFrame *mpFrom, *mpTo;
 
-		InstanceMask *mpRaftIns, *mpSamIns, *mpPrevMapIns, *mpLocalMapIns; //RAFT와 SAM을 여기에 기록하기
+		void SetFromFrame(BoxFrame* pF);
+		void SetToFrame(BoxFrame* pF);
+
+		InstanceMask *mpRaftIns, *mpSamIns, *mpSamIns2, *mpPrevMapIns, *mpLocalMapIns, *mpFrameMapIns; //RAFT와 SAM + tracking을 여기에 기록하기
 		//                                    prev(from)             curr(to)
 		//1) sam request시 raft 정보, 2) raft와 to의 segmentation 매칭, 3) to의 sam과 raft 매칭, 4)to의 sam과 seg 매칭
 		std::map<int, int> mapReqRaft, mapRaftSeg, mapRaftSam, mapSamRaft, mapSamSeg, mapMapSeg, mapMapSam, mapLocalMapSeg, mapLocalMapSam;

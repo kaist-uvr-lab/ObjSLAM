@@ -94,7 +94,7 @@ namespace ObjectSLAM {
 	public:
 		cv::Mat mask;
 		ConcurrentMap<int, FrameInstance*> FrameInstances;
-		ConcurrentMap<int, GlobalInstance*> MapInstances; //삭제 예정
+		ConcurrentMap<int, GlobalInstance*> MapInstances; //삭제 예정. baseline test용도
 		ConcurrentMap<int, GOMAP::GaussianObject*> GaussianMaps;
 
 		//matching result

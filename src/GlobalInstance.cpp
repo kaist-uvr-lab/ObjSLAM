@@ -10,15 +10,18 @@
 #include <Utils_Geometry.h>
 #include <EIF.h>
 
+#include <Gaussian/GaussianObject.h>
+#include <Eval/EvalObj.h>
+
 namespace ObjectSLAM {
 	std::atomic<long unsigned int> GlobalInstance::mnNextGIId = 0;
 	ObjectSLAM* GlobalInstance::ObjSystem = nullptr;
-	GlobalInstance::GlobalInstance() :mnId(++mnNextGIId), mnMatchFail(0), mbBad(false), pos(cv::Mat::zeros(3, 1, CV_32FC1)) {
+	GlobalInstance::GlobalInstance() :mnId(++mnNextGIId), mnMatchFail(0), mbBad(false), pos(cv::Mat::zeros(3, 1, CV_32FC1))
+		, cov(cv::Mat::eye(3,3,CV_32FC1)), mpEval(nullptr){
 	}
 
 	void GlobalInstance::EIFFilterOutlier()
 	{
-
 		//unique_lock<mutex> lock(mMutexMapPoints);
 
 		//Extended Isolation Forest
@@ -27,7 +30,7 @@ namespace ObjectSLAM {
 
 		auto vpMPs = this->AllMapPoints.ConvertVector();
 
-		if (mapConnected.Size() < 4 || vpMPs.size() < 20) {
+		if (setConnected.Size() < 4 || vpMPs.size() < 20) {
 			//std::cout << "asdf eif" <<" "<<mapConnected.Size()<<" "<<vpMPs.size() << std::endl;
 			return;
 		}
@@ -125,13 +128,12 @@ namespace ObjectSLAM {
 		// 
 		auto t2 = std::chrono::system_clock::now();
 
-
-		{
-			std::stringstream ss;
-			ss << "EIF::filter," << this->mnId << "," << this->mapConnected.Size() << "==" << this->AllMapPoints.Size() << "," << nErr << "," << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-			//ss << "G::NewMP," << this->mnId << "," << spMPs.size() << "," << nAdd;
-			ObjSystem->vecObjectAssoRes.push_back(ss.str());
-		}
+		//{
+		//	std::stringstream ss;
+		//	ss << "EIF::filter," << this->mnId << "," << this->mapConnected.Size() << "==" << this->AllMapPoints.Size() << "," << nErr << "," << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+		//	//ss << "G::NewMP," << this->mnId << "," << spMPs.size() << "," << nAdd;
+		//	ObjSystem->vecObjectAssoRes.push_back(ss.str());
+		//}
 
 	}
 
@@ -254,15 +256,16 @@ namespace ObjectSLAM {
 		}
 	}
 
-	void GlobalInstance::Connect(FrameInstance* pIns, BoxFrame* pBF, int id) {
+	void GlobalInstance::Connect(FrameInstance* pIns) {
 		//bf에 인덱스 추가
-		this->mapConnected.Update(pBF, id);
-		this->mapInstances.Update(pIns, id);
+		this->setConnected.Update(pIns);
+		//this->mapConnected.Update(pBF, id);
+		//this->mapInstances.Update(pIns, id);
 
 		//ObjSystem->vecObjectAssoRes.push_back("G::C::start");
 
 		//현재 포인트가 mask 를 벗어나는 경우 제거
-		auto pKF = pBF->mpRefKF;
+		auto pKF = pIns->mpRefKF;
 		cv::Mat T = pKF->GetPose();
 		cv::Mat R = T.rowRange(0, 3).colRange(0, 3);
 		cv::Mat t = T.rowRange(0, 3).col(3);
@@ -283,11 +286,11 @@ namespace ObjectSLAM {
 			float d = 0.0;
 			bool bproj = CommonUtils::Geometry::ProjectPoint(pt, d, pMPi->GetWorldPos(), K, R, t);
 			
-			/*if (!bproj || !rect.contains(pt))
+			if (!bproj || !rect.contains(pt))
 			{
 				this->AllMapPoints.Erase(pMPi);
 				nDel++;
-			}*/
+			}
 
 			/*if (!rect.contains(pt))
 			{
@@ -295,12 +298,12 @@ namespace ObjectSLAM {
 			}*/
 		}
 
-		{
+		/*{
 			std::stringstream ss;
 			ss << "G::DelMP," << this->mnId << "," << this->mapConnected.Size() << "," << this->AllMapPoints.Size() << ", " << "," << nDel;
 			ObjSystem->vecObjectAssoRes.push_back(ss.str());
-		}
-
+		}*/
+		
 		//추가 instance의 mp 추가
 		//ObjSystem->vecObjectAssoRes.push_back("G::C::123");
 		this->AddMapPoints(pIns->setMPs);
@@ -308,7 +311,7 @@ namespace ObjectSLAM {
 	}
 
 	void GlobalInstance::Merge(GlobalInstance* pG) {
-		if (this->mnId == pG->mnId)
+		/*if (this->mnId == pG->mnId)
 			return;
 		GlobalInstance* pG1, * pG2;
 		if (pG->mapConnected.Size() > this->mapConnected.Size())
@@ -344,7 +347,7 @@ namespace ObjectSLAM {
 			if (pG1->AllMapPoints.Count(pMP))
 				continue;
 			pG1->AllMapPoints.Update(pMP);
-		}
+		}*/
 	}
 
 	void GlobalInstance::AddMapPoints(std::set<EdgeSLAM::MapPoint*> spMPs) {
@@ -360,11 +363,14 @@ namespace ObjectSLAM {
 			}
 			this->AllMapPoints.Update(pMP);
 		}
+		
 		return;
-		auto tempBFs = this->mapConnected.Get();
-		auto tempMapInstances = this->mapInstances.Get();
+		/*auto tempBFs = this->mapConnected.Get();
+		auto tempMapInstances = this->mapInstances.Get();*/
+
+		auto tempIns = this->setConnected.Get();
 		//ObjSystem->vecObjectAssoRes.push_back("G::M::start");
-		std::map<FrameInstance*, cv::Mat> mapR, mapT, mapK;
+		/*std::map<FrameInstance*, cv::Mat> mapR, mapT, mapK;
 		for (auto pair : tempBFs)
 		{
 			auto pBF = pair.first;
@@ -382,7 +388,8 @@ namespace ObjectSLAM {
 			mapR[pIns] = R;
 			mapT[pIns] = t;
 			mapK[pIns] = K;
-		}
+		}*/
+
 		//ObjSystem->vecObjectAssoRes.push_back("G::M::1");
 		int nAdd = 0;
 		int nAlready = 0;
@@ -398,23 +405,29 @@ namespace ObjectSLAM {
 
 			bool bAdd = true;
 
-			for (auto pair : tempMapInstances)
+			for (auto p : tempIns)
 			{
-				auto p = pair.first;
-				if (!mapR.count(p))
-				{
-					//ObjSystem->vecObjectAssoRes.push_back("G::M::err");
-					continue;
-				}
-				cv::Mat tempR = mapR[p];
-				cv::Mat tempT = mapT[p];
-				cv::Mat tempK = mapK[p];
+				//auto p = pair.first;
+				//
+				//if (!mapR.count(p))
+				//{
+				//	//ObjSystem->vecObjectAssoRes.push_back("G::M::err");
+				//	continue;
+				//}
+				//cv::Mat tempR = mapR[p];
+				//cv::Mat tempT = mapT[p];
+				//cv::Mat tempK = mapK[p];
 
 				auto rect = p->rect;
+				auto pTempKF = p->mpRefKF;
+				cv::Mat T = pTempKF->GetPose();
+				cv::Mat K = pTempKF->K.clone();
+				cv::Mat R = T.rowRange(0, 3).colRange(0, 3);
+				cv::Mat t = T.rowRange(0, 3).col(3);
 
 				float d = 0.0;
 				cv::Point2f pt;
-				bool bproj = CommonUtils::Geometry::ProjectPoint(pt, d, pMP->GetWorldPos(), tempK, tempR, tempT);
+				bool bproj = CommonUtils::Geometry::ProjectPoint(pt, d, pMP->GetWorldPos(), K, R, t);
 				if (!bproj || !rect.contains(pt))
 				{
 					bAdd = false;
@@ -432,11 +445,13 @@ namespace ObjectSLAM {
 				this->AllMapPoints.Update(pMP);
 			}
 		}
-		{
+
+		/*{
 			std::stringstream ss;
 			ss << "G::NewMP," << this->mnId << "," << this->mapConnected.Size() << "," << this->AllMapPoints.Size() << "," << spMPs.size() << "," << nAdd << "," << nAlready;
 			ObjSystem->vecObjectAssoRes.push_back(ss.str());
-		}
+		}*/
+
 		//ObjSystem->vecObjectAssoRes.push_back("G::M::end");
 		//std::cout << this->mnId << " add mp = " << this->AllMapPoints.Size() <<" || "<<n << std::endl;
 	}
@@ -474,7 +489,7 @@ namespace ObjectSLAM {
 				continue;
 			/*if (pMP->Observations() < 3)
 				continue;*/
-			const cv::Mat X3d = pMP->GetWorldPos();
+			const cv::Mat X3d = pMP->GetWorldPos();  
 			pointMat.push_back(X3d.t());
 			n++;
 		}
@@ -482,8 +497,15 @@ namespace ObjectSLAM {
 		//바운딩 박스 계산하면서 평균 위치 계산
 		if (n < 3)
 		{
-			std::unique_lock<std::mutex> lock(mMutexPos);
-			pos = cv::Mat::zeros(3, 1, CV_32FC1);
+			{
+				std::unique_lock<std::mutex> lock(mMutexPos);
+				pos = cv::Mat::zeros(3, 1, CV_32FC1);
+				cov = cv::Mat::eye(3, 3, CV_32FC1);
+			}
+			{
+				std::unique_lock<std::mutex> lock(mMutexBB);
+				vecCorners.clear();
+			}
 			//ObjSystem->vecObjectAssoRes.push_back("g::update::end");
 			return;
 		}
@@ -497,8 +519,15 @@ namespace ObjectSLAM {
 		if (eigenVectors.rows != 3 || eigenVectors.cols != 3)
 		{
 			//ObjSystem->vecObjectAssoRes.push_back("g::update::end");
-			std::unique_lock<std::mutex> lock(mMutexPos);
-			pos = cv::Mat::zeros(3, 1, CV_32FC1);
+			{
+				std::unique_lock<std::mutex> lock(mMutexPos);
+				pos = cv::Mat::zeros(3, 1, CV_32FC1);
+				cov = cv::Mat::eye(3, 3, CV_32FC1);
+			}
+			{
+				std::unique_lock<std::mutex> lock(mMutexBB);
+				vecCorners.clear();
+			}
 			return;
 		}
 
@@ -506,6 +535,7 @@ namespace ObjectSLAM {
 		if (bDeter) {
 			eigenVectors.row(2) = -eigenVectors.row(2);
 		}
+
 		// Transform points to the principal component space
 		cv::Mat transformedPoints = (pointMat - cv::repeat(pca.mean, pointMat.rows, 1)) * eigenVectors.t();
 		// Compute min and max in the transformed space
@@ -544,8 +574,14 @@ namespace ObjectSLAM {
 			}
 		}
 		{
+			cv::Mat D = cv::Mat::zeros(3, 3, CV_32FC1);
+			for (int i = 0; i < 3; i++) {
+				D.at<float>(i, i) = eigenValues.at<float>(i);
+			}
+			
 			std::unique_lock<std::mutex> lock(mMutexPos);
 			pos = pca.mean.t();
+			cov = eigenVectors.t() * D * eigenVectors;
 		}
 
 		//boundingbox update
@@ -578,12 +614,85 @@ namespace ObjectSLAM {
 				vecCorners.push_back(cv::Point3f(transformedCorner));
 			}
 		}
-		this->EIFFilterOutlier();
+		//this->EIFFilterOutlier();
 	}
 
 	cv::Mat GlobalInstance::GetPosition() {
 		std::unique_lock<std::mutex> lock(mMutexPos);
 		return pos.clone();
+	}
+	cv::Mat GlobalInstance::GetCovariance() {
+		std::unique_lock<std::mutex> lock(mMutexPos);
+		return cov.clone();
+	}
+	GOMAP::GO2D GlobalInstance::Project2D(const cv::Mat& K, const cv::Mat& Rcw, const cv::Mat& tcw) {
+
+		cv::Mat acov, apos;
+		{
+			std::unique_lock<std::mutex> lock(mMutexPos);
+			acov = cov.clone();
+			apos = pos.clone();
+		}
+
+		//원점 계산
+		cv::Mat Xc = (Rcw * apos + tcw);
+		cv::Mat Xi = K * Xc;
+		cv::Mat mu = cv::Mat::zeros(2, 1, CV_32FC1);
+		mu.at<float>(0) = Xi.at<float>(0) / Xi.at<float>(2);
+		mu.at<float>(1) = Xi.at<float>(1) / Xi.at<float>(2);
+		//cv::Point2f center(Xi.at<float>(0) / Xi.at<float>(2), Xi.at<float>(1) / Xi.at<float>(2));
+
+		//타원 프로젝션
+		cv::Mat cov2D;
+		float fx = K.at<float>(0, 0);
+		float fy = K.at<float>(1, 1);
+		float x = Xc.at<float>(0);
+		float y = Xc.at<float>(1);
+		float invz = 1 / Xc.at<float>(2);
+		float invz2 = invz * invz;
+		cv::Mat J = cv::Mat::zeros(2, 3, CV_32FC1);
+
+		J.at<float>(0, 0) = fx * invz;
+		J.at<float>(0, 2) = -fx * x * invz2;
+
+		J.at<float>(1, 1) = fy * invz;
+		J.at<float>(1, 2) = -fy * y * invz2;
+
+		cov2D = J * cov * J.t();
+
+		//시각화 코드
+		/*std::map<float, float> chi2_dict = {
+		{0.90f, 4.605f},
+		{0.95f, 5.991f},
+		{0.99f, 9.210f}
+		};
+		float chi2_val = chi2_dict.count(confidence) ? chi2_dict[confidence] : 5.991f;*/
+		float chi2_val = 1.0;
+
+		// 고유값 분해
+		cv::Mat eigenvalues, eigenvectors;
+		cv::eigen(cov2D, eigenvalues, eigenvectors);
+
+		// 타원의 각도 계산 (라디안)
+		float angle_rad = atan2(eigenvectors.at<float>(1, 0), eigenvectors.at<float>(0, 0));
+
+		// 타원의 장축/단축 길이 계산
+		float axes_length_major = sqrt(chi2_val * eigenvalues.at<float>(0, 0));
+		float axes_length_minor = sqrt(chi2_val * eigenvalues.at<float>(1, 0));
+
+		// OpenCV 타원 그리기 파라미터로 변환
+
+		cv::Size axes(cvRound(axes_length_major), cvRound(axes_length_minor));
+		double angle_deg = angle_rad * 180.0 / CV_PI;
+
+		//라디안 이용
+		GOMAP::GO2D g(mu, cov2D, axes_length_major, axes_length_minor, angle_rad);
+		/*g.center = mu.clone();
+		g.cov2D = cov2D.clone();
+		g.major = axes_length_major;
+		g.minor = axes_length_minor;
+		g.angle_rad = angle_rad;*/
+		return g;
 	}
 	void GlobalInstance::UpdatePosition() {
 		auto vpMPs = AllMapPoints.ConvertVector();

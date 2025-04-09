@@ -1,6 +1,7 @@
 #include <FrameInstance.h>
 
 #include <KeyFrame.h>
+#include <Frame.h>
 #include <MapPoint.h>
 
 namespace ObjectSLAM {
@@ -53,5 +54,4 @@ namespace ObjectSLAM {
 		pCurr->mask = newmask.clone();
 		return pCurr;
 	}
-
 }

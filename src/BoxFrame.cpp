@@ -54,7 +54,7 @@ namespace ObjectSLAM {
 
 			if (pBF->mapMasks.Count("yoloseg"))
 			{
-				auto mapGlobals = pBF->mapMasks.Get("yoloseg")->MapInstances.Get();
+				/*auto mapGlobals = pBF->mapMasks.Get("yoloseg")->MapInstances.Get();
 				for (auto pair : mapGlobals) {
 					auto pG = pair.second;
 					
@@ -63,7 +63,7 @@ namespace ObjectSLAM {
 					}
 					if (!setGlobalIns.count(pG))
 						setGlobalIns.insert(pG);
-				}
+				}*/
 			}
 		}
 	}

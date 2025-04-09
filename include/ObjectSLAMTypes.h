@@ -25,8 +25,11 @@ namespace ObjectSLAM {
 	enum class InstanceType {
 		SEG, SAM, RAFT, MAP
 	};
+	enum class ObjectMeasureType {
+		IoU, IoA, IoM
+	};
 	enum class AssociationResultType {
-		SUCCESS, FAIL, RECOVERY
+		SUCCESS, FAIL, RECOVERY, REPLACE
 	};
 
 	class ObjectPoint;

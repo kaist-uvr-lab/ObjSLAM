@@ -22,6 +22,9 @@
 #include <KeyFrame.h>
 #include <Gaussian/Optimization/EdgeMonoObject.h>
 
+#include <Utils.h>
+#include <Camera.h>
+
 namespace ObjectSLAM {
 	namespace GOMAP {
 		namespace Optimizer {
@@ -61,6 +64,8 @@ namespace ObjectSLAM {
 					auto pKF = pFrame->mpRefKF;
 					auto rect = pFrame->rect;
 					auto pt = pFrame->pt;
+
+					Utils::undistortPoint(pt, pt, pKF->K, pKF->mpCamera->D);
 
 					Eigen::Matrix<double, 2, 1> obs;
 					obs << pt.x, pt.y;

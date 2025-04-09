@@ -371,7 +371,7 @@ namespace ObjectSLAM {
             {
                 spNeighBFs.insert(pBF);
 
-                auto mapGlobals = pBF->mapMasks.Get("yoloseg")->MapInstances.Get();
+                /*auto mapGlobals = pBF->mapMasks.Get("yoloseg")->MapInstances.Get();
                 for (auto pair : mapGlobals)
                 {
                     auto pG = pair.second;
@@ -379,7 +379,7 @@ namespace ObjectSLAM {
                         continue;
                     if (!spNeighGlobalIns.count(pG) && !setMatchIDs.count(pG->mnId))
                         spNeighGlobalIns.insert(pG);
-                }
+                }*/
             }
         }
         if(bShow)
@@ -406,8 +406,8 @@ namespace ObjectSLAM {
                     nTotal++;
                 }
             }
-            if(bShow && nCount > 5)
-                std::cout << "test global = " << pG->mnId << " " << nCount <<" == "<< pG->mapConnected.Size()<<","<<spMPs.size() << std::endl;
+            /*if(bShow && nCount > 5)
+                std::cout << "test global = " << pG->mnId << " " << nCount <<" == "<< pG->mapConnected.Size()<<","<<spMPs.size() << std::endl;*/
             if (nTotal > 5)
                 break;
         }
@@ -451,15 +451,17 @@ namespace ObjectSLAM {
                         vecPoints.push_back(avgPt);
                     }
                     
-                    auto pG = pPrevSeg->MapInstances.Get(pair.first);
+                    //auto pG = pPrevSeg->MapInstances.Get(pair.first);
                     //auto pG = pPrevIns->mpGlobal;
-                    if (pG && pG->mapConnected.Count(pNewBF)) {
+                    
+                    /*if (pG && pG->mapConnected.Count(pNewBF)) {
                         int idx = pG->mapConnected.Get(pNewBF);
                         if (!setMatchIDs.count(idx))
                         {
                             
                         }
-                    }
+                    }*/
+
                     ntest++;
                     //std::cout << "test = " << setMPs.size() << " " << nMP << std::endl;
                 }
