@@ -39,7 +39,11 @@ namespace ObjectSLAM {
 	class AssociationManager {
 	public:
 		//최종 마무리 전
-		static void AssociationWithSeg(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key, const std::string& mapName, const std::string& userName, AssoFramePairData* pPairData);
+		static void AssociationWithLM(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key, const std::string& mapName, const std::string& userName, AssoFramePairData* pPairData);
+
+		static void AssociationWithSEG(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key, const std::string& mapName, const std::string& userName, AssoFramePairData* pPairData);
+
+		static void AssociationWithRAFT(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key, const std::string& mapName, const std::string& userName, AssoFramePairData* pPairData);
 
 		static void AssociationWithSAM(EdgeSLAM::SLAM* SLAM, ObjectSLAM* ObjSLAM, const std::string& key
 			, const std::string& mapName, const std::string& userName, const int _type
@@ -57,9 +61,11 @@ namespace ObjectSLAM {
 			, const std::string& mapName, const std::string& userName, const int _type
 			, BoxFrame* pCurr, EdgeSLAM::Frame* pFrame
 		*/
-		static bool AssociationWithFrame(BoxFrame* pCurr, EdgeSLAM::Frame* pFrame, const cv::Mat& K, const cv::Mat& T,
-			std::map<GOMAP::GaussianObject*, FrameInstance*>& mapRes);
-
+		static bool GetFrameInstancesFromUncertainty(BoxFrame* pCurr, EdgeSLAM::Frame* pFrame, const cv::Mat& K, const cv::Mat& T,
+			std::map<GOMAP::GaussianObject*, std::vector<FrameInstance*>>& mapRes);
+		static bool AssociationFrameWithLM(BoxFrame* pCurr, EdgeSLAM::Frame* pFrame, const cv::Mat& K, const cv::Mat& T,
+			std::map<GOMAP::GaussianObject*, std::vector<FrameInstance*>>& mapRes);
+		static void GetLocalMapInstancesFromUncertainty(EdgeSLAM::SLAM* SLAM, AssoFramePairData* pPairData);
 		//iou 체크
 		static float CalculateMeasureForAsso(const cv::Mat& mask1, const cv::Mat& mask2, float area1, float area2, ObjectMeasureType& type, int id = 1);
 		static float CalculateIOU(const cv::Mat& mask1, const cv::Mat& mask2, float area1, int id = 1);

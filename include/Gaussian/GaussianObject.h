@@ -77,15 +77,17 @@ namespace ObjectSLAM {
 			std::atomic<int> nSeg; //seg에서 바로 연결될 확률
 			std::atomic<int> nContour;//전체 포인트의 수
 
-			ConcurrentMap<InstanceMask*, FrameInstance*> mObservations;
+			ConcurrentMap<InstanceMask*, int> mObservations;
 			
 			GO2D Project2D(const cv::Mat& K, const cv::Mat& Rcw, const cv::Mat& tcw);
 
 			void GenerateEllipsoidPoints(cv::Mat& points, float scale = 1.0, int resolution = 20);
 
-			void AddObservation(InstanceMask* f, FrameInstance* obs, bool btype = true); //true이면 seg, false이면 sam
-			FrameInstance* GetObservation(InstanceMask* f);
-			std::map<InstanceMask*, FrameInstance*> GetObservations();
+			void AddObservation(InstanceMask* f, int id, bool btype = true); //true이면 seg, false이면 sam
+			int GetObservation(InstanceMask* f);
+			std::map<InstanceMask*, int> GetObservations();
+
+			void Merge(GaussianObject* pOther);
 
 			float CalcDistance3D(GaussianObject* other);
 
@@ -95,6 +97,7 @@ namespace ObjectSLAM {
 			cv::Rect2d bbox;
 			double observationNoise;*/
 			//test
+			GaussianObject* mpReplaced;
 			GlobalInstance* mpBaseObj;
 			Evaluation::EvalObj* mpEval;
 		public:

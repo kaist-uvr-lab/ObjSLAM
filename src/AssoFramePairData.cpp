@@ -7,6 +7,7 @@ namespace ObjectSLAM {
 	AssoFramePairData::AssoFramePairData(BoxFrame* pFrom, BoxFrame* pTo)
 		:mpFrom(pFrom), mpTo(pTo), fromid(pFrom->mnId), toid(pTo->mnId), mpRaftIns(nullptr), mpSamIns(nullptr), mpSamIns2(nullptr)
 		, mpPrevMapIns(nullptr), mpLocalMapIns(nullptr), mpFrameMapIns(nullptr)
+		, mRaftAssoData(nullptr), mSamAssoData(nullptr), mFrameMapAssoData(nullptr), mLocalMapAssoData(nullptr)
 	{
 
 	}

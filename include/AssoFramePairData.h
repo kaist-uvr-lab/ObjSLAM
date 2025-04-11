@@ -22,10 +22,22 @@ namespace ObjectSLAM {
 	namespace GOMAP {
 		class GaussianObject;
 	}
+
+	class AssoMatchingData {
+	public:
+		AssoMatchingData(){}
+		virtual ~AssoMatchingData(){}
+
+		std::map<int, int> mapPrevAsso, mapCurrAsso, mapSAM;
+		std::map<int, AssociationResultType> mapPrevResult, mapCurrResult; //prev에서 r
+
+	};
+
 	class AssoFramePairData {
 	public:
 		AssoFramePairData():fromid(-1),toid(-1),mpFrom(nullptr),mpTo(nullptr), mpRaftIns(nullptr), mpSamIns(nullptr)
-			, mpSamIns2(nullptr), mpPrevMapIns(nullptr), mpLocalMapIns(nullptr), mpFrameMapIns(nullptr){}
+			, mpSamIns2(nullptr), mpPrevMapIns(nullptr), mpLocalMapIns(nullptr), mpFrameMapIns(nullptr)
+		, mRaftAssoData(nullptr), mSamAssoData(nullptr) , mFrameMapAssoData(nullptr) , mLocalMapAssoData(nullptr) {}
 		AssoFramePairData(BoxFrame* pFrom, BoxFrame* pTo);
 		virtual ~AssoFramePairData() {}
 
@@ -37,11 +49,14 @@ namespace ObjectSLAM {
 		void SetToFrame(BoxFrame* pF);
 
 		InstanceMask *mpRaftIns, *mpSamIns, *mpSamIns2, *mpPrevMapIns, *mpLocalMapIns, *mpFrameMapIns; //RAFT와 SAM + tracking을 여기에 기록하기
+		AssoMatchingData *mRaftAssoData, * mSamAssoData, *mFrameMapAssoData, *mLocalMapAssoData;
+
 		//                                    prev(from)             curr(to)
+		//std::set<int> setSegFromFailed, setSamFromFailed, setSegToFailed, setSamToFailed;
+
 		//1) sam request시 raft 정보, 2) raft와 to의 segmentation 매칭, 3) to의 sam과 raft 매칭, 4)to의 sam과 seg 매칭
-		std::map<int, int> mapReqRaft, mapRaftSeg, mapRaftSam, mapSamRaft, mapSamSeg, mapMapSeg, mapMapSam, mapLocalMapSeg, mapLocalMapSam;
-		std::set<int> setSegFromFailed, setSamFromFailed, setSegToFailed, setSamToFailed;
-		std::map<int, AssociationResultType> mapRaftResult, mapPrevMapResult, mapLocalMapResult;
+		//std::map<int, int> mapReqRaft, mapRaftSeg, mapRaftSam, mapSamRaft, mapSamSeg, mapMapSeg, mapMapSam, mapLocalMapSeg, mapLocalMapSam, mapFrameMapSeg, mapFrameMapSam;
+		//std::map<int, AssociationResultType> mapRaftResult, mapPrevMapResult, mapLocalMapResult, mapFrameMapResult;
 		//reqraft, raftseg에서 prev에서 매칭 실패 id 획득
 	};
 }

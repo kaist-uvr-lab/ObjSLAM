@@ -19,6 +19,7 @@
 
 #include <Converter.h>
 #include <FrameInstance.h>
+#include <BoxFrame.h>
 #include <KeyFrame.h>
 #include <Gaussian/Optimization/EdgeMonoObject.h>
 
@@ -60,7 +61,9 @@ namespace ObjectSLAM {
 
 				for (auto pair : setFrames)
 				{
-					auto pFrame = pair.second;	
+					auto pMask = pair.first;
+					auto pid = pair.second;
+					auto pFrame = pMask->FrameInstances.Get(pid);
 					auto pKF = pFrame->mpRefKF;
 					auto rect = pFrame->rect;
 					auto pt = pFrame->pt;

@@ -11,11 +11,11 @@ namespace ObjectSLAM {
 	namespace GOMAP {
 
         std::atomic<long unsigned int> GaussianObject::mnNextId = 0;
-        GaussianObject::GaussianObject() :mbInitialized(false)
+        GaussianObject::GaussianObject() :mbInitialized(false), mpReplaced(nullptr)
             , nObs(0), nContour(0), nSeg(0), id(++GaussianObject::mnNextId) {}
 		GaussianObject::GaussianObject(const cv::Mat& _pos, const cv::Mat& _cov, const cv::Mat& _R)
 			:mean(_pos), covariance(_cov), Rwo(_R), nObs(0), nContour(0), nSeg(0), id(++GaussianObject::mnNextId)
-        , mbInitialized(true), mpEval(nullptr), mpBaseObj(nullptr){
+        , mbInitialized(true), mpEval(nullptr), mpBaseObj(nullptr), mpReplaced(nullptr) {
 		}
         cv::RotatedRect GO2D::CalcEllipse(float chisq)
         {
@@ -202,16 +202,59 @@ namespace ObjectSLAM {
             return g;
 		}
 
-		void GaussianObject::AddObservation(InstanceMask* f, FrameInstance* obs, bool bType) {
-            mObservations.Update(f, obs);
+        void GaussianObject::Merge(GaussianObject* pOther) {
+            if (this->id == pOther->id){
+                //std::cout << "같은 객체" << std::endl;
+                return;
+            }
+            if (pOther->mpReplaced == this || this->mpReplaced == pOther)
+            {
+                //std::cout << "이미 결합" << std::endl;
+                return;
+            }
+            GaussianObject* pG1, * pG2;
+            if(pOther->id < this->id)
+            //if (pOther->mObservations.Size() > this->mObservations.Size())
+            {
+                pG1 = pOther;
+                pG2 = this;
+            }
+            else {
+                pG1 = this;
+                pG2 = pOther;
+            }
+            
+            auto obs = pG2->mObservations.Get();
+            pG2->mObservations.Clear();
+            
+
+            for (auto pair : obs)
+            {
+                auto pMask = pair.first;
+                auto pid = pair.second;
+
+                pMask->GaussianMaps.Update(pid, pG1);
+                pG1->AddObservation(pMask, pid);
+            }
+
+            cv::Mat cov = pG1->GetCovariance() + pG2->GetCovariance();
+            int nContour = pG1->nContour + pG2->nContour;
+            pG1->SetCovariance(cov);
+            pG1->nContour = nContour;
+            
+            pG2->mpReplaced = pG1;
+        }
+
+		void GaussianObject::AddObservation(InstanceMask* f, int id, bool bType) {
+            mObservations.Update(f, id);
             if (bType)
                 nSeg++;
             nObs++;
 		}
-		std::map<InstanceMask*, FrameInstance*> GaussianObject::GetObservations() {
+		std::map<InstanceMask*, int> GaussianObject::GetObservations() {
 			return mObservations.Get();
 		}
-        FrameInstance* GaussianObject::GetObservation(InstanceMask* f){
+        int GaussianObject::GetObservation(InstanceMask* f){
             return mObservations.Get(f);
         }
         float GaussianObject::CalcDistance3D(GaussianObject* other){

@@ -2,6 +2,7 @@
 #include <Gaussian/GaussianObject.h>
 
 #include <FrameInstance.h>
+#include <BoxFrame.h>
 #include <KeyFrame.h>
 
 namespace ObjectSLAM {
@@ -19,7 +20,9 @@ namespace ObjectSLAM {
 
 		for (auto pair1 : obs)
 		{
-			auto p1 = pair1.second;
+			auto pMask1 = pair1.first;
+			auto pid1 = pair1.second;
+			auto p1 = pMask1->FrameInstances.Get(pid1);
 			auto pKF1 = p1->mpRefKF;
 
 			const float& fx1 = pKF1->fx;
@@ -41,7 +44,9 @@ namespace ObjectSLAM {
 
 			for (auto pair2 : obs)
 			{
-				auto p2 = pair2.second;
+				auto pMask2 = pair2.first;
+				auto pid2 = pair2.second;
+				auto p2 = pMask2->FrameInstances.Get(pid2);
 				if (p1 == p2)
 					continue;
 				auto pK2 = p2->mpRefKF;	
